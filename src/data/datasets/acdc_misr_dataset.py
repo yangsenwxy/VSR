@@ -24,7 +24,8 @@ class AcdcMISRDataset(BaseDataset):
         self.downscale_factor = downscale_factor
 
         self.degrade = Degrade(downscale_factor)
-        self.post_transform = compose([Box({'name': 'Normalize'}) ,Box({'name': 'ToTensor'})])
+        self.post_transform = compose([Box({'name': 'Normalize'}),
+                                       Box({'name': 'ToTensor'})])
         self.image_path = []
         self.data = np.empty([0, 2], dtype=int)
 
