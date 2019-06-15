@@ -2,6 +2,7 @@ import torch
 import random
 import functools
 import numpy as np
+from numpy.fft import fftshift, ifftshift, fftn, ifftn
 import SimpleITK as sitk
 from skimage.transform import resize
 
@@ -481,3 +482,88 @@ class RandomCropPatch(BaseTransform):
             ht, wt, dt = size
             h0, w0, d0 = random.randint(0, h - ht), random.randint(0, w - wt), random.randint(0, d - dt)
             return h0, h0 + ht, w0, w0 + wt, d0, d0 + dt
+
+
+class Degrade(object):
+    """ The class is used for generating low resolution images
+    Args:
+        downscale_factor (int): The degrade factor.
+        method (str): The degrade method. Default: `FFT`.
+    """
+    def __init__(self, downscale_factor, method='FFT'):
+        self.downscale_factor = downscale_factor
+        self.method = method
+
+    def _transform_kspace_to_image(self, k, dim=None, img_shape=None):
+        if not dim:
+            dim = range(k.ndim)
+        k = ifftshift(k, axes=dim)
+        k = ifftn(k, s=img_shape, axes=dim, norm='ortho')
+        img = fftshift(k, axes=dim)
+        img = np.abs(img)
+        img = img[..., None]
+        return img
+
+    def _transform_image_to_kspace(self, img, dim=None, k_shape=None):
+        img = img.squeeze()
+        if not dim:
+            dim = range(img.ndim)
+        img = ifftshift(img, axes=dim)
+        img = fftn(img, s=k_shape, axes=dim, norm='ortho')
+        k = fftshift(img, axes=dim)
+        return k
+
+    def __call__(self, *imgs):
+        """
+        Args:
+            imgs (tuple of numpy.ndarray): The images to be down-scaled.
+        Returns:
+            imgs (tuple of numpy.ndarray): The degraded images.
+        """
+        if not all(isinstance(img, np.ndarray) for img in imgs):
+            raise TypeError('All of the images should be numpy.ndarray.')
+
+        if not all(img.ndim == 3 for img in imgs) and not all(img.ndim == 4 for img in imgs):
+            raise ValueError("All of the images' dimensions should be 3 (2D images) or 4 (3D images).")
+
+        _imgs = []
+        for img in imgs:
+            if img.ndim == 3:
+                # 2D image: H, W, C
+                if self.method == 'FFT':
+                    kspace = self._transform_image_to_kspace(img)
+                    kx_max = kspace.shape[0]//2
+                    ky_max = kspace.shape[1]//2
+                    lx = kspace.shape[0]//self.downscale_factor
+                    ly = kspace.shape[1]//self.downscale_factor
+                    img = self._transform_kspace_to_image(kspace[kx_max - lx // 2 : kx_max + (lx - (lx // 2)),
+                                                                 ky_max - ly // 2 : ky_max + (ly - (ly // 2))])
+                elif self.method == 'bicubic':
+                    import cv2
+                    img = img.squeeze()
+                    img = cv2.resize(img, (img.shape[0]//self.downscale_factor, img.shape[1]//self.downscale_factor),
+                                     interpolation=cv2.INTER_CUBIC)[..., None]
+                else:
+                    raise ValueError
+            elif img.ndim == 4:
+                # Need to be tested
+                # 3D image: H, W, D, C
+                slices_list = []
+                for i in range(img.shape[-2]):
+                    if self.method == 'FFT':
+                        kspace = self._transform_image_to_kspace(img[:, :, i])
+                        kx_max = kspace.shape[0]//2
+                        ky_max = kspace.shape[1]//2
+                        # zero padding
+                        rect_func = np.zeros_like(kspace)
+                        rect_func[kx_max - kx_max//self.downscale_factor : kx_max + kx_max//self.downscale_factor,
+                                  ky_max - ky_max//self.downscale_factor : ky_max + ky_max//self.downscale_factor] = 1
+                        slices_list.append(self._transform_kspace_to_image(kspace * rect_func))
+                    elif self.method == 'bicubic':
+                        raise NotImplementedError
+                    else:
+                        raise ValueError
+                img = np.stack(slices_list, axis=-2)
+            _imgs.append(img)
+        imgs = tuple(_imgs)
+        return imgs
