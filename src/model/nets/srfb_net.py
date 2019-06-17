@@ -5,11 +5,15 @@ from src.model.nets.base_net import BaseNet
 
 
 class SRFBNet(BaseNet):
-    """The implementation of super-resolution feedback network (SRFBN) with some modifications. First, the global residual skip connection do not perform upsampling and the feature maps are concatenated before the reconstruction block. Second, the model inputs are multiple different LR images (ref: https://arxiv.org/abs/1903.09814, https://github.com/Paper99/SRFBN_CVPR19/blob/master/networks/srfbn_arch.py).
-    Args:0
+    """The implementation of super-resolution feedback network (SRFBN) with some modifications.
+
+    First, the global residual skip connection do not perform upsampling and the feature maps are concatenated before the reconstruction block.
+    Second, the model inputs are multiple different LR images (ref: https://arxiv.org/abs/1903.09814, https://github.com/Paper99/SRFBN_CVPR19/blob/master/networks/srfbn_arch.py).
+
+    Args:
         in_channels (int): The input channels.
         out_channels (int): The output channels.
-        num_features (list): The number of the internel feature maps.
+        num_features (int): The number of the internel feature maps.
         num_groups (int): The number of the projection groups in the feedback block.
         upscale_factor (int): The upscale factor (2, 3 ,4 or 8).
     """
@@ -21,22 +25,19 @@ class SRFBNet(BaseNet):
         self.num_groups = num_groups
         self.upscale_factor = upscale_factor
         self.lrf_block = _LRFBlock(in_channels, num_features) # The LR feature extraction block.
-        self.f_blcok = _FBlock(num_features, num_groups, upscale_factor) # The feedback block.
+        self.f_block = _FBlock(num_features, num_groups, upscale_factor) # The feedback block.
         self.r_block = _RBlock(num_features, out_channels, upscale_factor) # The reconstruction block.
 
     def forward(self, inputs):
-        # Reset the hidden state of the feedback block.
-        self.f_blcok.hidden_state = torch.zeros_like(inputs[0])
-
         outputs = []
-        for input in inputs:
+        for i, input in enumerate(inputs):
             features = self.lrf_block(input)
-            features = self.f_blcok(features)
+            if i == 0:
+                self.f_block.hidden_state = torch.zeros_like(features) # Reset the hidden state of the feedback block.
+            features = self.f_block(features)
+            self.f_block.hidden_state = features # Set the hidden state of the feedback block to the current output.
             features = input + features # The global residual skip connection.
             output = self.r_block(features)
-
-            # Set the hidden state of the feedback block to the current output.
-            self.f_blcok.hidden_state = output
             outputs.append(output)
         return outputs
 
@@ -97,7 +98,7 @@ class _FBlock(nn.Module):
         self.out_block.add_module('conv1', nn.Conv2d(num_features * num_groups, num_features, kernel_size=1))
         self.out_block.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
 
-        self._hidden_state = hidden_state
+        self._hidden_state = None
 
     @property
     def hidden_state(self):
@@ -105,22 +106,22 @@ class _FBlock(nn.Module):
 
     @hidden_state.setter
     def hidden_state(self, state):
-        self._hidden_state.empty_like(state).copy_(state)
+        self._hidden_state = torch.empty_like(state).copy_(state)
 
     def forward(self, input):
         input = torch.cat([input, self.hidden_state], dim=1)
         features = self.in_block(input)
 
-        lr_features_list hr_features_list = [features], []
+        lr_features_list, hr_features_list = [features], []
         for up_block, down_block in zip(self.up_blocks, self.down_blocks):
-            concat_lr_features = torch.cat(lr_features, dim=1)
+            concat_lr_features = torch.cat(lr_features_list, dim=1)
             hr_features = up_block(concat_lr_features)
             hr_features_list.append(hr_features)
-            concat_hr_features = torch.cat(hr_features, dim=1)
+            concat_hr_features = torch.cat(hr_features_list, dim=1)
             lr_features = down_block(concat_hr_features)
             lr_features_list.append(lr_features)
 
-        features = torch.cat(lr_features_list[1:])
+        features = torch.cat(lr_features_list[1:], dim=1)
         output = self.out_block(features)
         return output
 
