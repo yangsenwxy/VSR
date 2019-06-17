@@ -4,7 +4,9 @@ from src.runner.trainers.base_trainer import BaseTrainer
 
 
 class AcdcMISRTrainer(BaseTrainer):
-    """The ACDC trainer for Multi-Images Super Resolution. Specificly, there are multiple LR inputs and corresponding HR targets.
+    """The ACDC trainer for Multi-Images Super Resolution.
+
+    Specificly, there are multiple LR inputs and corresponding HR targets.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -29,9 +31,7 @@ class AcdcMISRTrainer(BaseTrainer):
         Returns:
             losses (list of torch.Tensor): The computed losses.
         """
-        for loss in self.losses:
-            losses = [loss(output, target) for output, target in zip(outputs, targets)]
-            losses = [torch.stack(losses).mean()]
+        losses = [loss(outputs, targets) for loss in self.losses]
         return losses
 
     def _compute_metrics(self, outputs, targets):
