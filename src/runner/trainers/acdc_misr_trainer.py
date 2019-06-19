@@ -43,5 +43,21 @@ class AcdcMISRTrainer(BaseTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        metrics = [metric(outputs[-1], targets[-1]) for metric in self.metrics]
+        output, target = self._min_max_normalize(outputs[-1]), self._min_max_normalize(targets[-1])
+        metrics = [metric(output, target) for metric in self.metrics]
         return metrics
+
+    @staticmethod
+    def _min_max_normalize(imgs):
+        """Normalize the image to [0, 1].
+        Args:
+            imgs (torch.Tensor) (N, C, H, W): Te images to be normalized.
+
+        Returns:
+            imgs (torch.Tensor) (N, C, H, W): The normalized images.
+        """
+        imgs = imgs.clone()
+        for img in imgs:
+            min, max = img.min(), img.max()
+            img.sub_(min).div_(max - min)
+        return imgs
