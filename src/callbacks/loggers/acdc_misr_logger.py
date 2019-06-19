@@ -20,16 +20,14 @@ class AcdcMISRLogger(BaseLogger):
             valid_batch (dict): The validation batch.
             valid_outputs (list of torch.Tensor): The validation outputs.
         """
-        train_lr_img = make_grid(train_batch['lr_imgs'][-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
+
         train_hr_img = make_grid(train_batch['hr_imgs'][-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
         train_sr_img = make_grid(train_outputs[-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
-
-        valid_lr_img = make_grid(valid_batch['lr_imgs'][-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
         valid_hr_img = make_grid(valid_batch['hr_imgs'][-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
         valid_sr_img = make_grid(valid_outputs[-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
 
-        train_grid = torch.cat([train_lr_img, train_hr_img, train_sr_img], dim=-1)
-        valid_grid = torch.cat([valid_lr_img, valid_hr_img, valid_sr_img], dim=-1)
+        train_grid = torch.cat([train_sr_img, train_hr_img], dim=-1)
+        valid_grid = torch.cat([valid_sr_img, valid_hr_img], dim=-1)
         with SummaryWriter(self.log_dir) as writer:
             writer.add_image('train', train_grid)
             writer.add_image('valid', valid_grid)
