@@ -26,7 +26,7 @@ class AcdcMISRDataset(BaseDataset):
         self.image_path = []
         self.data = np.empty([0, 2], dtype=int)
 
-        _image_path = [path for path in self.data_root.iterdir() if path.is_dir()]
+        _image_path = [path for path in self.data_dir.iterdir() if path.is_dir()]
         for i, path in enumerate(_image_path):
             self.image_path.append(path / f'{path.parts[-1]}_4d.nii.gz')
             # image dim: H, W, D, frames
