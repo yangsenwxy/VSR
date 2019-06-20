@@ -43,8 +43,13 @@ class AcdcMISRTrainer(BaseTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        output, target = self._min_max_normalize(outputs[-1]), self._min_max_normalize(targets[-1])
-        metrics = [metric(output, target) for metric in self.metrics]
+        outputs = list(map(self._min_max_normalize, outputs))
+        targets = list(map(self._min_max_normalize, targets))
+
+        metrics = []
+        for metric in self.metrics:
+            sequence_metrics = [metric(output, target) for output, target in zip(outputs, targets)]
+            metrics.append(torch.stack(sequence_metrics).mean())
         return metrics
 
     @staticmethod
@@ -59,5 +64,5 @@ class AcdcMISRTrainer(BaseTrainer):
         imgs = imgs.clone()
         for img in imgs:
             min, max = img.min(), img.max()
-            img.sub_(min).div_(max - min)
+            img.sub_(min).div_(max - min + 1e-10)
         return imgs
