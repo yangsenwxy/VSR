@@ -7,30 +7,36 @@ from src.model.nets.base_net import BaseNet
 class SRFBNet(BaseNet):
     """The implementation of super-resolution feedback network (SRFBN) with some modifications.
 
-    First, the global residual skip connection do not perform upsampling and the feature maps are concatenated before the reconstruction block.
-    Second, the model inputs are multiple different LR images (ref: https://arxiv.org/abs/1903.09814, https://github.com/Paper99/SRFBN_CVPR19/blob/master/networks/srfbn_arch.py).
+    The global residual skip connection do not perform upsampling and the feature maps are concatenated before the reconstruction block.
+    (ref: https://arxiv.org/abs/1903.09814, https://github.com/Paper99/SRFBN_CVPR19/blob/master/networks/srfbn_arch.py).
 
     Args:
         in_channels (int): The input channels.
         out_channels (int): The output channels.
+        num_steps (int): The number of the iterations.
         num_features (int): The number of the internel feature maps.
         num_groups (int): The number of the projection groups in the feedback block.
-        upscale_factor (int): The upscale factor (2, 3 ,4 or 8).
+        upscale_factor (int): The upscale factor (2, 3, 4 or 8).
     """
-    def __init__(self, in_channels, out_channels, num_features, num_groups, upscale_factor):
+    def __init__(self, in_channels, out_channels, num_steps, num_features, num_groups, upscale_factor):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.num_steps = num_steps
         self.num_features = num_features
         self.num_groups = num_groups
+
+        if upscale_factor not in [2, 3, 4 ,8]:
+            raise ValueError(f'The upscale factor should be 2, 3, 4 or 8. Got {upscale_factor}.')
         self.upscale_factor = upscale_factor
+
         self.lrf_block = _LRFBlock(in_channels, num_features) # The LR feature extraction block.
         self.f_block = _FBlock(num_features, num_groups, upscale_factor) # The feedback block.
         self.r_block = _RBlock(num_features, out_channels, upscale_factor) # The reconstruction block.
 
-    def forward(self, inputs):
+    def forward(self, input):
         outputs = []
-        for i, input in enumerate(inputs):
+        for i in range(self.num_steps):
             features = self.lrf_block(input)
             if i == 0:
                 self.f_block.hidden_state = torch.zeros_like(features) # Reset the hidden state of the feedback block.
@@ -39,7 +45,7 @@ class SRFBNet(BaseNet):
             features = input + features # The global residual skip connection.
             output = self.r_block(features)
             outputs.append(output)
-        return outputs
+        return outputs[-1]
 
 
 class _LRFBlock(nn.Sequential):
