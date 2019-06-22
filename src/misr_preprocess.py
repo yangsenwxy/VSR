@@ -42,7 +42,7 @@ def main(args):
             for s in range(img.shape[2]):
                 _img = img[..., s:s+1, :] # (H, W, C, T)
                 nib.save(nib.Nifti1Image(_img, np.eye(4)),
-                         str(output_dir / type_ / patient_name / f'{patient_name}_2d+1d_frame{s+1:0>2d}.nii.gz'))
+                         str(output_dir / type_ / patient_name / f'{patient_name}_2d+1d_sequence{s+1:0>2d}.nii.gz'))
 
 
 def _parse_args():
