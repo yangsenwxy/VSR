@@ -33,7 +33,7 @@ class SRFBMISRNet(BaseNet):
         self.f_block = _FBlock(num_features, num_groups, upscale_factor) # The feedback block.
         self.r_block = _RBlock(num_features, out_channels, upscale_factor) # The reconstruction block.
 
-    def forward(self, input):
+    def forward(self, inputs):
         outputs = []
         for i, input in enumerate(inputs):
             features = self.lrf_block(input)
