@@ -59,5 +59,5 @@ class AcdcSISRTrainer(BaseTrainer):
         imgs = imgs.clone()
         for img in imgs:
             min, max = img.min(), img.max()
-            img.sub_(min).div_(max - min)
+            img.sub_(min).div_(max - min + 1e-10)
         return imgs
