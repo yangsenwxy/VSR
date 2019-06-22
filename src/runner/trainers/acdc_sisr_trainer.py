@@ -22,28 +22,28 @@ class AcdcSISRTrainer(BaseTrainer):
         """
         return batch['lr_img'], batch['hr_img']
 
-    def _compute_losses(self, outputs, targets):
+    def _compute_losses(self, output, target):
         """Compute the losses.
         Args:
-            outputs (torch.Tensor): The model outputs.
-            targets (torch.Tensor): The data targets.
+            output (torch.Tensor): The model output.
+            target (torch.Tensor): The data target.
 
         Returns:
             losses (list of torch.Tensor): The computed losses.
         """
-        losses = [loss(outputs, targets) for loss in self.losses]
+        losses = [loss(output, target) for loss in self.losses]
         return losses
 
-    def _compute_metrics(self, outputs, targets):
+    def _compute_metrics(self, output, target):
         """Compute the metrics.
         Args:
-             outputs (torch.Tensor): The model outputs.
-             targets (torch.Tensor): The data targets.
+            output (torch.Tensor): The model output.
+            target (torch.Tensor): The data target.
 
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        output, target = self._min_max_normalize(outputs), self._min_max_normalize(targets)
+        output, target = self._min_max_normalize(output), self._min_max_normalize(target)
         metrics = [metric(output, target) for metric in self.metrics]
         return metrics
 
