@@ -60,8 +60,8 @@ class _FBlock(nn.Module):
     def __init__(self, num_features, num_groups, upscale_factor):
         super().__init__()
         self.in_block = nn.Sequential()
-        self.in_block.add_module('conv1', nn.Conv2d(num_features * 2, num_features, kernel_size=1))
-        self.in_block.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
+        self.in_block.add_module('conv', nn.Conv2d(num_features * 2, num_features, kernel_size=1))
+        self.in_block.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
 
         self.up_blocks = nn.ModuleList()
         self.down_blocks = nn.ModuleList()
@@ -76,13 +76,13 @@ class _FBlock(nn.Module):
         for i in range(num_groups):
             if i == 0:
                 up_block = nn.Sequential()
-                up_block.add_module('deconv1', nn.ConvTranspose2d(num_features, num_features, kernel_size=kernel_size, stride=stride, padding=padding))
-                up_block.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
+                up_block.add_module('deconv', nn.ConvTranspose2d(num_features, num_features, kernel_size=kernel_size, stride=stride, padding=padding))
+                up_block.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
                 self.up_blocks.append(up_block)
 
                 down_block = nn.Sequential()
-                down_block.add_module('conv1', nn.Conv2d(num_features, num_features, kernel_size=kernel_size, stride=stride, padding=padding))
-                down_block.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
+                down_block.add_module('conv', nn.Conv2d(num_features, num_features, kernel_size=kernel_size, stride=stride, padding=padding))
+                down_block.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
                 self.down_blocks.append(down_block)
             else:
                 up_block = nn.Sequential()
@@ -100,8 +100,8 @@ class _FBlock(nn.Module):
                 self.down_blocks.append(down_block)
 
         self.out_block = nn.Sequential()
-        self.out_block.add_module('conv1', nn.Conv2d(num_features * num_groups, num_features, kernel_size=1))
-        self.out_block.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
+        self.out_block.add_module('conv', nn.Conv2d(num_features * num_groups, num_features, kernel_size=1))
+        self.out_block.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
 
         self._hidden_state = None
 
@@ -114,10 +114,10 @@ class _FBlock(nn.Module):
         self._hidden_state = torch.empty_like(state).copy_(state)
 
     def forward(self, input):
-        input = torch.cat([input, self.hidden_state], dim=1)
-        features = self.in_block(input)
+        features = torch.cat([input, self.hidden_state], dim=1)
+        lr_features = self.in_block(features)
 
-        lr_features_list, hr_features_list = [features], []
+        lr_features_list, hr_features_list = [lr_features], []
         for up_block, down_block in zip(self.up_blocks, self.down_blocks):
             concat_lr_features = torch.cat(lr_features_list, dim=1)
             hr_features = up_block(concat_lr_features)
