@@ -1,3 +1,4 @@
+import csv
 import torch
 import logging
 import argparse
@@ -11,7 +12,7 @@ from pathlib import Path
 
 import src
 from src.data.transforms import compose
-
+from src.model.metrics import PSNR, SSIM
 
 def main(args):
     logging.info(f'Load the config from "{args.config_path}".')
@@ -26,6 +27,9 @@ def main(args):
     if 'cuda' in config.device and not torch.cuda.is_available():
         raise ValueError("The cuda is not available. Please set the device in the trainer section to 'cpu'.")
     device = torch.device(config.device)
+    psnr = PSNR().to(device)
+    ssim = SSIM().to(device)
+    l1loss = torch.nn.L1Loss().to(device)
 
     logging.info('Create the testing data.')
     data_paths = sorted(data_dir.glob('**/*2d+1d*.nii.gz'))
@@ -41,6 +45,7 @@ def main(args):
         net.load_state_dict(checkpoint['net'])
 
     trange = tqdm(data_paths, total=len(data_paths), desc="Test")
+    metrics_table = [['filename', 'L1Loss', 'PSNR', 'SSIM']]
     if method in ['sisr', 'bicubic', 'gt']:
         for path in trange:
             file_name = path.parts[-1].split('.')[0]
@@ -51,18 +56,45 @@ def main(args):
             num_frames = img.shape[-1]
 
             sr_video = []
+            _psnr, _ssim, _l1loss = 0.0, 0.0, 0.0
             for i in range(num_frames):
                 if method == 'sisr':
                     hr_img = img[..., i]
+                    # Make the image size divisible by the downscale_factor.
+                    h, w, r = img.shape[0], img.shape[1], config.upscale_factor
+                    h0, hn = (h % r) // 2, h - ((h % r) - (h % r) // 2)
+                    w0, wn = (w % r) // 2, w - ((w % r) - (w % r) // 2)
+                    hr_img = img[h0:hn, w0:wn, :, i]
+
                     lr_img = degrade(hr_img)
+                    hr_img = post_transforms(hr_img).permute(2, 0, 1).contiguous().unsqueeze(0).to(device)
                     lr_img = post_transforms(lr_img).permute(2, 0, 1).contiguous().unsqueeze(0).to(device)
-                    sr_img = net(lr_img)
+                    with torch.no_grad():
+                        sr_img = net(lr_img)
+
+                    # Calculate the metrics and the l1loss
+                    _psnr += psnr(_min_max_normalize(hr_img), _min_max_normalize(sr_img)).item()
+                    _ssim += ssim(_min_max_normalize(hr_img), _min_max_normalize(sr_img)).item()
+                    _l1loss += l1loss(hr_img, sr_img).item()
+
                     sr_img = sr_img.squeeze().detach().cpu().numpy()
                 elif method == 'bicubic':
                     import cv2
                     hr_img = img[..., i]
+                    # Make the image size divisible by the downscale_factor.
+                    h, w, r = img.shape[0], img.shape[1], config.upscale_factor
+                    h0, hn = (h % r) // 2, h - ((h % r) - (h % r) // 2)
+                    w0, wn = (w % r) // 2, w - ((w % r) - (w % r) // 2)
+                    hr_img = img[h0:hn, w0:wn, :, i]
                     lr_img = degrade(hr_img).squeeze()
                     sr_img = cv2.resize(lr_img, (lr_img.shape[1]*config.upscale_factor, lr_img.shape[0]*config.upscale_factor), interpolation=cv2.INTER_CUBIC)
+
+                    # Calculate the metrics and the l1loss
+                    _hr_img = torch.tensor(hr_img.transpose(2, 0, 1)[None, ...], device=device)
+                    _sr_img = torch.tensor(sr_img[None, None, ...], device=device)
+                    _psnr += psnr(_min_max_normalize(_hr_img), _min_max_normalize(_sr_img)).item()
+                    _ssim += ssim(_min_max_normalize(_hr_img), _min_max_normalize(_sr_img)).item()
+                    _l1loss += l1loss(_hr_img, _sr_img).item()
                 elif method == 'gt':
                     sr_img = img[..., i].squeeze()
                 sr_video.append(sr_img)
@@ -76,6 +108,13 @@ def main(args):
             if not output_path.is_dir():
                 output_path.mkdir()
             _dump_video(sr_video, output_path / f'{file_name}.gif')
+
+            # Save the metrics and the loss of the result
+            metrics_table.append([file_name, _l1loss/num_frames, _psnr/num_frames, _ssim/num_frames])
+
+        with open(saved_dir / 'metrics.csv', 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerows(metrics_table)
 
     elif method == 'misr':
         for path in trange:
@@ -133,6 +172,21 @@ def _dump_video(video, path):
     with imageio.get_writer(path) as writer:
         for i in range(video.shape[0]):
             writer.append_data(video[i])
+
+
+def _min_max_normalize(imgs):
+    """Normalize the image to [0, 1].
+    Args:
+        imgs (torch.Tensor) (N, C, H, W): Te images to be normalized.
+
+    Returns:
+        imgs (torch.Tensor) (N, C, H, W): The normalized images.
+    """
+    imgs = imgs.clone()
+    for img in imgs:
+        min, max = img.min(), img.max()
+        img.sub_(min).div_(max - min + 1e-10)
+    return imgs
 
 
 def _quantize(video):
