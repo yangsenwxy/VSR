@@ -87,11 +87,13 @@ def main(args):
             hr_img = img.transpose(3, 0, 1, 2)
             lr_img = degrade(*list(hr_img))
             lr_img = post_transforms(*lr_img)
-            sr_img = net(lr_img)
-            sr_img = sr_img.squeeze().detach().cpu().numpy()
+            lr_img = [img.permute(2,0,1).unsqueeze(dim=0).to(device) for img in lr_img]
+            with torch.no_grad():
+                sr_img = net(lr_img)
+            sr_img = [img.squeeze().detach().cpu().numpy() for img in sr_img]
 
             # Dim: (T, H, W)
-            sr_video = np.stack(sr_video)
+            sr_video = np.stack(sr_img)
             sr_video = _quantize(sr_video)
 
             # Save the super resolution video.
