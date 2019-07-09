@@ -27,13 +27,28 @@ class AcdcMISRDataset(BaseDataset):
         self.num_frames = num_frames
         self.temporal_order = temporal_order
         self.downscale_factor = degrade[0].kwargs.downscale_factor
-        self.data_paths = sorted((self.data_dir / self.type).glob('**/*2d+1d*.nii.gz'))
+
+        if self.type == 'train':
+            self.data = []
+            data_paths = sorted((self.data_dir / self.type).glob('**/*2d+1d*.nii.gz'))
+            for data_path in data_paths:
+                T = nib.load(str(data_path)).get_data().shape[-1]
+                self.data.extend([(data_path, t) for t in range(T)])
+        else:
+            self.data_paths = sorted((self.data_dir / self.type).glob('**/*2d+1d*.nii.gz'))
 
     def __len__(self):
-        return len(self.data_paths)
+        if self.type == 'train':
+            return len(self.data)
+        else:
+            return len(self.data_paths)
 
     def __getitem__(self, index):
-        imgs = nib.load(str(self.data_paths[index])).get_data() # (H, W, C, T)
+        if self.type == 'train':
+            data_path, t = self.data[index]
+        else:
+            data_path = self.data_paths[index]
+        imgs = nib.load(str(data_path)).get_data() # (H, W, C, T)
 
         # Make the image size divisible by the downscale_factor.
         h, w, r = imgs.shape[0], imgs.shape[1], self.downscale_factor
@@ -45,8 +60,6 @@ class AcdcMISRDataset(BaseDataset):
         if self.type == 'train':
             n = self.num_frames
             T = imgs.shape[-1]
-            t = np.random.randint(0, T)
-            assert n <= T
 
             # Compute the start and the end index of the sequence according to the temporal order.
             if self.temporal_order == 'last':
