@@ -4,7 +4,7 @@ from src.runner.trainers.base_trainer import BaseTrainer
 
 
 class AcdcMISRTrainer(BaseTrainer):
-    """The ACDC trainer for Multi-Images Super Resolution.
+    """The ACDC trainer for the Multi-Images Super Resolution.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
