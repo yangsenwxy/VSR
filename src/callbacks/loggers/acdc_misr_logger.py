@@ -6,7 +6,7 @@ from .base_logger import BaseLogger
 
 
 class AcdcMISRLogger(BaseLogger):
-    """The ACDC logger for the MISR task.
+    """The ACDC logger for the Multi-Image Super-Resolution.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

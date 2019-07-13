@@ -9,7 +9,7 @@ from src.data.transforms import compose
 
 
 class AcdcMISRDataset(BaseDataset):
-    """The Automated Cardiac Diagnosis Challenge (ACDC) in MICCAI 2017 (ref: https://www.creatis.insa-lyon.fr/Challenge/acdc/index.html).
+    """The dataset of the Automated Cardiac Diagnosis Challenge (ACDC) in MICCAI 2017 (ref: https://www.creatis.insa-lyon.fr/Challenge/acdc/index.html) for the Multi-Image Super-Resolution.
     Args:
         transforms (Box): The preprocessing and augmentation techiques applied to the training data.
         post_transforms (Box): The postprocessing techiques applied to the data after downscaling.
@@ -28,26 +28,18 @@ class AcdcMISRDataset(BaseDataset):
         self.temporal_order = temporal_order
         self.downscale_factor = degrade[0].kwargs.downscale_factor
 
-        if self.type == 'train':
-            self.data = []
-            data_paths = sorted((self.data_dir / self.type).glob('**/*2d+1d*.nii.gz'))
-            for data_path in data_paths:
-                T = nib.load(str(data_path)).get_data().shape[-1]
-                self.data.extend([(data_path, t) for t in range(T)])
-        else:
-            self.data_paths = sorted((self.data_dir / self.type).glob('**/*2d+1d*.nii.gz'))
+        # Save the data path and the target frame index.
+        self.data = []
+        data_paths = sorted((self.data_dir / self.type).glob('**/*2d+1d*.nii.gz'))
+        for data_path in data_paths:
+            T = nib.load(str(data_path)).get_data().shape[-1]
+            self.data.extend([(data_path, t) for t in range(T)])
 
     def __len__(self):
-        if self.type == 'train':
-            return len(self.data)
-        else:
-            return len(self.data_paths)
+        return len(self.data)
 
     def __getitem__(self, index):
-        if self.type == 'train':
-            data_path, t = self.data[index]
-        else:
-            data_path = self.data_paths[index]
+        data_path, t = self.data[index]
         imgs = nib.load(str(data_path)).get_data() # (H, W, C, T)
 
         # Make the image size divisible by the downscale_factor.
@@ -56,28 +48,24 @@ class AcdcMISRDataset(BaseDataset):
         w0, wn = (w % r) // 2, w - ((w % r) - (w % r) // 2)
         imgs = imgs[h0:hn, w0:wn, ...]
 
-        # Randomly select the target frame and the form the sequence.
-        if self.type == 'train':
-            n = self.num_frames
-            T = imgs.shape[-1]
+        n = self.num_frames
+        T = imgs.shape[-1]
 
-            # Compute the start and the end index of the sequence according to the temporal order.
-            if self.temporal_order == 'last':
-                start, end = t - n + 1, t + 1
-            elif self.temporal_order == 'middle':
-                start, end = t - (n - 1) // 2, t + ((n - 1) - (n - 1) // 2) + 1
+        # Compute the start and the end index of the sequence according to the temporal order.
+        if self.temporal_order == 'last':
+            start, end = t - n + 1, t + 1
+        elif self.temporal_order == 'middle':
+            start, end = t - (n - 1) // 2, t + ((n - 1) - (n - 1) // 2) + 1
 
-            if start < 0:
-                imgs = np.concatenate((imgs[..., start:], imgs[..., :end]), axis=-1)
-            elif end > T:
-                end %= T
-                imgs = np.concatenate((imgs[..., start:], imgs[..., :end]), axis=-1)
-            else:
-                imgs = imgs[..., start:end]
+        if start < 0:
+            imgs = np.concatenate((imgs[..., start:], imgs[..., :end]), axis=-1)
+        elif end > T:
+            end %= T
+            imgs = np.concatenate((imgs[..., start:], imgs[..., :end]), axis=-1)
+        else:
+            imgs = imgs[..., start:end]
 
-            hr_imgs = [imgs[..., t] for t in range(imgs.shape[-1])] # list of (H, W, C)
-        elif self.type == 'valid':
-            hr_imgs = [imgs[..., t] for t in range(imgs.shape[-1])] # list of (H, W, C)
+        hr_imgs = [imgs[..., t] for t in range(imgs.shape[-1])] # list of (H, W, C)
 
         hr_imgs = self.transforms(*hr_imgs)
         lr_imgs = self.degrade(*hr_imgs)
