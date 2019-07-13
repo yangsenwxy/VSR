@@ -9,7 +9,7 @@ from src.data.transforms import compose
 
 
 class AcdcSISRDataset(BaseDataset):
-    """The Automated Cardiac Diagnosis Challenge (ACDC) in MICCAI 2017 (ref: https://www.creatis.insa-lyon.fr/Challenge/acdc/index.html).
+    """The dataset of the Automated Cardiac Diagnosis Challenge (ACDC) in MICCAI 2017 (ref: https://www.creatis.insa-lyon.fr/Challenge/acdc/index.html) for Single-Image Super-Resolution.
     Args:
         transforms (Box): The preprocessing and augmentation techiques applied to the training data.
         post_transforms (Box): The postprocessing techiques applied to the data after downscaling.
@@ -35,7 +35,7 @@ class AcdcSISRDataset(BaseDataset):
         w0, wn = (w % r) // 2, w - ((w % r) - (w % r) // 2)
         hr_img = img[h0:hn, w0:wn, ...]
 
-        # Generate the low resolution image according to the target frame
+        # Generate the low resolution image according to the target frame.
         # - Apply transforms
         if self.type == 'train':
             hr_img = self.transforms(hr_img)
