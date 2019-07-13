@@ -6,7 +6,7 @@ from .base_logger import BaseLogger
 
 
 class AcdcSISRLogger(BaseLogger):
-    """The ACDC logger for the SISR task.
+    """The ACDC logger for the Single-Image Super-Resolution.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

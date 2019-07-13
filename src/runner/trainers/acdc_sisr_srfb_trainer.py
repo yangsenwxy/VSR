@@ -4,7 +4,7 @@ from src.runner.trainers import AcdcSISRTrainer
 
 
 class AcdcSISRSRFBTrainer(AcdcSISRTrainer):
-    """The ACDC trainer for Single-Image Super Resolution using the SRFBNet.
+    """The ACDC trainer for the Single-Image Super Resolution using the SRFBNet.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
