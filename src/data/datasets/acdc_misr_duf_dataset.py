@@ -15,11 +15,11 @@ class AcdcMISRDUFDataset(BaseDataset):
         post_transforms (Box): The postprocessing techiques applied to the data after downscaling.
         degrade (Box): The downscaling function applied to the high resolution data.
         num_frames (int): The number of the lr images used for super resolution.
-        temporal_order (str): The order to form the sequence (default: 'last').
+        temporal_order (str): The order to form the sequence (default: 'middle').
             'last': The sequence would be {t-n+1, ..., t-1, t}.
             'middle': The sequence would be {t-(n-1)//2, ..., t-1, t, t+1, ..., t+[(n-1)-(n-1)//2]}.
         """
-    def __init__(self, transforms, post_transforms, degrade, num_frames, temporal_order='last', **kwargs):
+    def __init__(self, transforms, post_transforms, degrade, num_frames, temporal_order='middle', **kwargs):
         super().__init__(**kwargs)
         self.transforms = compose(transforms)
         self.post_transforms = compose(post_transforms)
@@ -74,5 +74,6 @@ class AcdcMISRDUFDataset(BaseDataset):
         lr_imgs = self.post_transforms(*lr_imgs)
         hr_imgs = self.post_transforms(*hr_imgs)
         lr_imgs = [img.permute(2, 0, 1).contiguous() for img in lr_imgs]
-        hr_img = hr_imgs[self.num_frames // 2].permute(2, 0, 1).contiguous()
+        t = self.num_frames // 2 if self.num_frames % 2 == 1 else self.num_frames // 2 - 1
+        hr_img = hr_imgs[t].permute(2, 0, 1).contiguous()
         return {'lr_imgs': lr_imgs, 'hr_img': hr_img}

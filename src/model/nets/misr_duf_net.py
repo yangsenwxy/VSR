@@ -23,7 +23,7 @@ class DUFNet(BaseNet):
         self.num_frames = num_frames
         self.size_filter = size_filter
         self.upscale_factor = upscale_factor
-        
+
         assert backbone in ['_DenseLayer16', '_DenseLayer28', '_DenseLayer52']
         if backbone == '_DenseLayer16':
             self.denseLayer = _DenseLayer16(64, 32)
@@ -31,7 +31,7 @@ class DUFNet(BaseNet):
             self.denseLayer = _DenseLayer28(64, 16)
         elif backbone == '_DenseLayer52':
             self.denseLayer = _DenseLayer52(64, 16)
-            
+
         self.head = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
 
         # The blocks in the end of the FilterGenerationNetwork
@@ -50,7 +50,8 @@ class DUFNet(BaseNet):
 
     def forward(self, inputs):
         # dim: (B, C, 1, H, W)
-        target = inputs[self.num_frames // 2].unsqueeze(dim=2)
+        t = self.num_frames // 2 if self.num_frames % 2 == 1 else self.num_frames // 2 - 1
+        target = inputs[t].unsqueeze(dim=2)
 
         # head
         features = []

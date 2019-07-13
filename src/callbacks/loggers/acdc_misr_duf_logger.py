@@ -16,9 +16,9 @@ class AcdcMISRDUFLogger(BaseLogger):
         Args:
             epoch (int): The number of trained epochs.
             train_batch (dict): The training batch.
-            train_outputs (list of torch.Tensor): The training outputs.
+            train_output (torch.Tensor): The training output.
             valid_batch (dict): The validation batch.
-            valid_outputs (list of torch.Tensor): The validation outputs.
+            valid_output (torch.Tensor): The validation output.
         """
         train_hr_img = make_grid(train_batch['hr_img'], nrow=1, normalize=True, scale_each=True, pad_value=1)
         train_sr_img = make_grid(train_output, nrow=1, normalize=True, scale_each=True, pad_value=1)
