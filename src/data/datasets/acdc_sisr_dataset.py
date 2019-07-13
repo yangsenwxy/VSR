@@ -9,7 +9,7 @@ from src.data.transforms import compose
 
 
 class AcdcSISRDataset(BaseDataset):
-    """The dataset of the Automated Cardiac Diagnosis Challenge (ACDC) in MICCAI 2017 (ref: https://www.creatis.insa-lyon.fr/Challenge/acdc/index.html) for Single-Image Super-Resolution.
+    """The dataset of the Automated Cardiac Diagnosis Challenge (ACDC) in MICCAI 2017 (ref: https://www.creatis.insa-lyon.fr/Challenge/acdc/index.html) for the Single-Image Super-Resolution.
     Args:
         transforms (Box): The preprocessing and augmentation techiques applied to the training data.
         post_transforms (Box): The postprocessing techiques applied to the data after downscaling.
