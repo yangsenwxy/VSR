@@ -3,23 +3,10 @@ import torch.nn as nn
 from torchvision import models
 
 
-class MISRL1Loss(nn.Module):
-    """The mean of the multple L1Loss for MISR task.
-    """
-    def __init__(self, **kwargs):
-        super().__init__()
-        self.l1_loss = nn.L1Loss(**kwargs)
-
-    def forward(self, outputs, targets):
-        losses = [self.l1_loss(output, target) for output, target in zip(outputs, targets)]
-        loss = torch.stack(losses).mean()
-        return loss
-
-
 class HuberLoss(nn.Module):
     """The implementation of the HuberLoss.
     Args:
-        delta (float)
+        delta (float): the threshold (ref: http://openaccess.thecvf.com/content_cvpr_2018/papers/Jo_Deep_Video_Super-Resolution_CVPR_2018_paper.pdf)
     """
     def __init__(self, delta):
         super().__init__()
@@ -35,9 +22,9 @@ class HuberLoss(nn.Module):
 
 
 class PerceptualLoss(nn.Module):
-    """Use VGG16 as the feature extrator.
+    """Use VGG16 as the feature extractor.
     Args:
-        requires_grad (boolean)
+        requires_grad (boolean): VGG parameters with gradient or not
     """
     def __init__(self, requires_grad=False):
         super().__init__()

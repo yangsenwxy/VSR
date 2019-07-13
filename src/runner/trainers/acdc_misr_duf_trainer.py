@@ -15,16 +15,16 @@ class AcdcMISRDUFTrainer(BaseTrainer):
             batch (dict): A batch of data.
 
         Returns:
-            inputs (list of torch.Tensor): The data inputs.
-            targets (list of torch.Tensor): The data targets.
+            input (torch.Tensor): The data inputs.
+            target (torch.Tensor): The data targets.
         """
         return batch['lr_imgs'], batch['hr_img']
 
     def _compute_losses(self, output, target):
         """Compute the losses.
         Args:
-            output (list of torch.Tensor): The model output.
-            target (list of torch.Tensor): The data target.
+            output (torch.Tensor): The model output.
+            target (torch.Tensor): The data target.
 
         Returns:
             losses (list of torch.Tensor): The computed losses.
@@ -35,8 +35,8 @@ class AcdcMISRDUFTrainer(BaseTrainer):
     def _compute_metrics(self, output, target):
         """Compute the metrics.
         Args:
-             output (list of torch.Tensor): The model output.
-             target (list of torch.Tensor): The data target.
+             output (torch.Tensor): The model output.
+             target (torch.Tensor): The data target.
 
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
