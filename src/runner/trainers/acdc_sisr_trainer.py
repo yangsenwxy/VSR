@@ -4,9 +4,7 @@ from src.runner.trainers.base_trainer import BaseTrainer
 
 
 class AcdcSISRTrainer(BaseTrainer):
-    """The ACDC trainer for Single-Image Super Resolution.
-
-    Specificly, there are single LR input and corresponding HR targets.
+    """The ACDC trainer for the Single-Image Super Resolution.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -31,7 +29,7 @@ class AcdcSISRTrainer(BaseTrainer):
         Returns:
             losses (list of torch.Tensor): The computed losses.
         """
-        losses = [loss(output, target) for loss in self.losses]
+        losses = [loss_fn(output, target) for loss_fn in self.loss_fns]
         return losses
 
     def _compute_metrics(self, output, target):
@@ -43,13 +41,15 @@ class AcdcSISRTrainer(BaseTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
+        # Do the min-max normalization before computing the metric.
         output, target = self._min_max_normalize(output), self._min_max_normalize(target)
-        metrics = [metric(output, target) for metric in self.metrics]
+
+        metrics = [metric_fn(output, target) for metric_fn in self.metric_fns]
         return metrics
 
     @staticmethod
     def _min_max_normalize(imgs):
-        """Normalize the image to [0, 1].
+        """Normalize the images to [0, 1].
         Args:
             imgs (torch.Tensor) (N, C, H, W): Te images to be normalized.
 

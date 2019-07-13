@@ -45,7 +45,7 @@ class SRFBNet(BaseNet):
             features = input + features # The global residual skip connection.
             output = self.r_block(features)
             outputs.append(output)
-        return outputs[-1]
+        return outputs
 
 
 class _LRFBlock(nn.Sequential):
