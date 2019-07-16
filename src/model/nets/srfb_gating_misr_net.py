@@ -20,7 +20,7 @@ class SRFBGatingMISRNet(BaseNet):
         self.num_features = num_features
         self.num_groups = num_groups
 
-        if upscale_factor not in [2, 3, 4 ,8]:
+        if upscale_factor not in [2, 3, 4, 8]:
             raise ValueError(f'The upscale factor should be 2, 3, 4 or 8. Got {upscale_factor}.')
         self.upscale_factor = upscale_factor
 
@@ -33,7 +33,7 @@ class SRFBGatingMISRNet(BaseNet):
         for i, input in enumerate(inputs):
             features = self.lrf_block(input)
             if i == 0:
-                self.f_block.hidden_state = torch.zeros_like(features) # Reset the hidden state of the feedback block.
+                self.f_block.hidden_state = features # Reset the hidden state of the feedback block.
             features = self.f_block(features)
             features = input + features # The global residual skip connection.
             output = self.r_block(features)
@@ -112,7 +112,7 @@ class _FBlock(nn.Module):
 
     @hidden_state.setter
     def hidden_state(self, state):
-        self._hidden_state = torch.empty_like(state).copy_(state)
+        self._hidden_state = state
 
     def forward(self, input):
         # Compute reset map (r) and update map (z).
