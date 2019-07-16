@@ -15,8 +15,8 @@ class AcdcMISRDUFTrainer(BaseTrainer):
             batch (dict): A batch of data.
 
         Returns:
-            input (torch.Tensor): The data inputs.
-            target (torch.Tensor): The data targets.
+            inputs (list of torch.Tensor): The data inputs.
+            target (torch.Tensor): The data target.
         """
         return batch['lr_imgs'], batch['hr_img']
 
