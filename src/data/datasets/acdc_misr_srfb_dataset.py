@@ -80,7 +80,8 @@ class AcdcMISRSRFBDataset(BaseDataset):
         else:
             hr_imgs = [imgs[..., t] for t in range(imgs.shape[-1])] # list of (H, W, C)
 
-        hr_imgs = self.transforms(*hr_imgs)
+        if self.type == 'train':
+            hr_imgs = self.transforms(*hr_imgs)
         lr_imgs = self.degrade(*hr_imgs)
         lr_imgs = self.post_transforms(*lr_imgs)
         hr_imgs = self.post_transforms(*hr_imgs)
