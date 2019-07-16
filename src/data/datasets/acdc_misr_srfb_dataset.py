@@ -77,7 +77,7 @@ class AcdcMISRSRFBDataset(BaseDataset):
                 imgs = imgs[..., start:end]
 
             hr_imgs = [imgs[..., t] for t in range(imgs.shape[-1])] # list of (H, W, C)
-        elif self.type == 'valid':
+        else:
             hr_imgs = [imgs[..., t] for t in range(imgs.shape[-1])] # list of (H, W, C)
 
         hr_imgs = self.transforms(*hr_imgs)
