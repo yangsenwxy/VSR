@@ -20,7 +20,7 @@ class AcdcSISRPredictor(BasePredictor):
         super().__init__(**kwargs)
         self.export_prediction = export_prediction
         self.saved_dir = Path(saved_dir) if export_prediction else None
-        
+
     def _get_inputs_targets(self, batch):
         """Specify the data input and target.
         Args:
@@ -78,18 +78,18 @@ class AcdcSISRPredictor(BasePredictor):
         trange = tqdm(self.test_dataloader,
                       total=len(self.test_dataloader),
                       desc='testing')
-        
+
         if self.export_prediction:
             video_dir = self.saved_dir / 'video'
             img_dir = self.saved_dir / 'img'
             csv_path = self.saved_dir / 'result.csv'
-            
+
             tmp_sid = None
-            sr_video, metrics_table, header = [], [], []
+            sr_video, metrics_table, header = [], [], ['name']
             header += [metric_fn.__class__.__name__ for metric_fn in self.metric_fns]
             header += [loss_fns.__class__.__name__ for loss_fns in self.loss_fns]
             metrics_table.append(header)
-        
+
         log = self._init_log()
         count = 0
         for batch in trange:
@@ -100,15 +100,15 @@ class AcdcSISRPredictor(BasePredictor):
                 losses = self._compute_losses(outputs, targets)
                 loss = (torch.stack(losses) * self.loss_weights).sum()
                 metrics = self._compute_metrics(outputs, targets)
-                
+
                 if self.export_prediction:
                     path = self.test_dataloader.dataset.data_paths[index]
                     filename = path.parts[-1].split('.')[0]
                     patient, _, sid, fid = filename.split('_')
                     _losses = [loss.cpu().numpy() for loss in losses]
                     _metrics = [metric.cpu().numpy() for metric in metrics]
-                    metrics_table.append([filename, *_losses, *_metrics])
-                    
+                    metrics_table.append([filename, *_metrics, *_losses])
+
                     # Save as the gif file
                     if sid != tmp_sid and index != 0:
                         sr_video = np.stack(sr_video)
@@ -117,33 +117,33 @@ class AcdcSISRPredictor(BasePredictor):
                             output_path.mkdir()
                         self._dump_video(sr_video, output_path / f'{tmp_sid}.gif')
                         sr_video = []
-                    
+
                     outputs = self._min_max_normalize(outputs) * 255
                     sr_img = outputs.squeeze().detach().cpu().numpy().astype(np.uint8)
                     sr_video.append(sr_img)
                     tmp_sid = sid
-                    
+
                     # Save as the png file
                     output_path = img_dir / patient
                     if not output_path.is_dir():
                         output_path.mkdir()
                     imsave(output_path / f'{sid}_{fid}.png', sr_img)
-                    
+
             batch_size = self.test_dataloader.batch_size
             self._update_log(log, batch_size, loss, losses, metrics)
             count += batch_size
             trange.set_postfix(**dict((key, f'{value / count: .3f}') for key, value in log.items()))
-            
+
         # Save the metrics
         if self.export_prediction:
             with open(csv_path, 'w', newline='') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerows(metrics_table)
-            
+
         for key in log:
             log[key] /= count
         logging.info(f'Test log: {log}.')
-        
+
     def _dump_video(self, video, path):
         """Dump super resolution video as the gif file
         Args:
