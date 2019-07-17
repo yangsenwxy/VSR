@@ -69,11 +69,12 @@ class AcdcMISRDUFDataset(BaseDataset):
 
         hr_imgs = [imgs[..., t] for t in range(imgs.shape[-1])] # list of (H, W, C)
 
-        hr_imgs = self.transforms(*hr_imgs)
+        if self.type == 'train':
+            hr_imgs = self.transforms(*hr_imgs)
         lr_imgs = self.degrade(*hr_imgs)
         lr_imgs = self.post_transforms(*lr_imgs)
         hr_imgs = self.post_transforms(*hr_imgs)
         lr_imgs = [img.permute(2, 0, 1).contiguous() for img in lr_imgs]
         t = self.num_frames // 2 if self.num_frames % 2 == 1 else self.num_frames // 2 - 1
         hr_img = hr_imgs[t].permute(2, 0, 1).contiguous()
-        return {'lr_imgs': lr_imgs, 'hr_img': hr_img}
+        return {'lr_imgs': lr_imgs, 'hr_img': hr_img, 'index': index}
