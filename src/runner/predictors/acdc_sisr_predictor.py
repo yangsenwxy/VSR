@@ -114,8 +114,9 @@ class AcdcSISRPredictor(BasePredictor):
                         sr_video = np.stack(sr_video)
                         output_path = video_dir / patient
                         if not output_path.is_dir():
-                            output_path.mkdir()
-                        self._dump_video(sr_video, output_path / f'{tmp_sid}.gif')
+                            output_path.mkdir(parents=True)
+                        video_filename = tmp_sid.replace('slice', 'sequence') + '.gif'
+                        self._dump_video(sr_video, output_path / video_filename)
                         sr_video = []
 
                     outputs = self._min_max_normalize(outputs) * 255
@@ -126,7 +127,7 @@ class AcdcSISRPredictor(BasePredictor):
                     # Save as the png file
                     output_path = img_dir / patient
                     if not output_path.is_dir():
-                        output_path.mkdir()
+                        output_path.mkdir(parents=True)
                     imsave(output_path / f'{sid}_{fid}.png', sr_img)
 
             batch_size = self.test_dataloader.batch_size
