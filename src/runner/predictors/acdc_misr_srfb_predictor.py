@@ -57,7 +57,7 @@ class AcdcMISRSRFBPredictor(AcdcMISRPredictor):
                         _metrics = [metric.item() for metric in _metrics]
                         results.append([filename + f'_frame{t+1:0>2d}', *_metrics, *_losses])
 
-                    outputs = [self._min_max_normalize(output) * 255 for output in outputs]
+                    outputs = [self._denormalize(output) for output in outputs]
                     sr_imgs = [output.squeeze().detach().cpu().numpy().astype(np.uint8)
                                for output in outputs]
 
@@ -126,9 +126,9 @@ class AcdcMISRSRFBPredictor(AcdcMISRPredictor):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the min-max normalization before computing the metric.
-        outputs = list(map(self._min_max_normalize, outputs))
-        targets = list(map(self._min_max_normalize, targets))
+        # Do the denormalization to [0-255] before computing the metric.
+        outputs = list(map(self._denormalize, outputs))
+        targets = list(map(self._denormalize, targets))
 
         metrics = []
         for metric_fn in self.metric_fns:
