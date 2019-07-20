@@ -1,9 +1,9 @@
 import torch
 
-from src.runner.trainers.base_trainer import BaseTrainer
+from src.runner.trainers.acdc_misr_trainer import AcdcMISRTrainer
 
 
-class AcdcMISRDUFTrainer(BaseTrainer):
+class AcdcMISRDUFTrainer(AcdcMISRTrainer):
     """The ACDC trainer for DUFNet.
     """
     def __init__(self, **kwargs):
@@ -41,21 +41,6 @@ class AcdcMISRDUFTrainer(BaseTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        output, target = self._min_max_normalize(output), self._min_max_normalize(target)
+        output, target = self._denormalize(output), self._denormalize(target)
         metrics = [metric(output, target) for metric in self.metric_fns]
         return metrics
-
-    @staticmethod
-    def _min_max_normalize(imgs):
-        """Normalize the image to [0, 1].
-        Args:
-            imgs (torch.Tensor) (N, C, H, W): Te images to be normalized.
-
-        Returns:
-            imgs (torch.Tensor) (N, C, H, W): The normalized images.
-        """
-        imgs = imgs.clone()
-        for img in imgs:
-            min, max = img.min(), img.max()
-            img.sub_(min).div_(max - min + 1e-10)
-        return imgs
