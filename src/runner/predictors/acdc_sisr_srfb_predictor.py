@@ -62,7 +62,7 @@ class AcdcSISRSRFBPredictor(AcdcSISRPredictor):
                         if not output_dir.is_dir():
                             output_dir.mkdir(parents=True)
                         video_name = tmp_sid.replace('slice', 'sequence') + '.gif'
-                        self._dump_video(sr_imgs, output_dir / video_name)
+                        self._dump_video(output_dir / video_name, sr_imgs)
                         sr_imgs = []
 
                     output = self._min_max_normalize(outputs[-1]) * 255
