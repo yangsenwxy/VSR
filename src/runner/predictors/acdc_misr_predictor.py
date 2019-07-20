@@ -1,49 +1,42 @@
 import torch
+import imageio
+from pathlib import Path
 
 from src.runner.predictors.base_predictor import BasePredictor
 
 
 class AcdcMISRPredictor(BasePredictor):
     """The ACDC predictor for the Multi-Images Super Resolution.
+    Args:
+        saved_dir (str): The directory to save the predicted videos, images and metrics (default: None).
+        export_prediction (bool): Whether to export the predicted video, images and metrics (default: False).
     """
-    def __init__(self, **kwargs):
+    def __init__(self, saved_dir=None, export_prediction=False, **kwargs):
         super().__init__(**kwargs)
+        if export_prediction:
+            if self.test_dataloader.batch_size != 1:
+                raise ValueError(f'The batch size should be 1 if export_prediction is True. Got {self.test_dataloader.batch_size}.')
+            #if self.test_dataloader.shuffle is True:
+            #    raise ValueError('The shuffle should be False if export_prediction is True.')
+            self.saved_dir = Path(saved_dir)
+        self.export_prediction = export_prediction
 
-    def _get_inputs_targets(self, batch):
-        """Specify the data input and target.
+    def _dump_video(self, path, imgs):
+        """To dump the video by concatenate the images.
         Args:
-            batch (dict): A batch of data.
-        Returns:
-            inputs (list of torch.Tensor): The data inputs.
-            targets (list of torch.Tensor): The data targets.
+            path (Path): The path to save the video.
+            imgs (list): The images to form the video.
         """
-        return batch['lr_imgs'], batch['hr_imgs']
-
-    def _compute_losses(self, outputs, targets):
-        """Compute the losses.
-        Args:
-            outputs (list of torch.Tensor): The model outputs.
-            targets (list of torch.Tensor): The data targets.
-        Returns:
-            losses (list of torch.Tensor): The computed losses.
-        """
-        raise NotImplementedError
-
-    def _compute_metrics(self, outputs, targets):
-        """Compute the metrics.
-        Args:
-            outputs (list of torch.Tensor): The model outputs.
-            targets (list of torch.Tensor): The data targets.
-        Returns:
-            metrics (list of torch.Tensor): The computed metrics.
-        """
-        raise NotImplementedError
+        with imageio.get_writer(path) as writer:
+            for img in imgs:
+                writer.append_data(img)
 
     @staticmethod
     def _min_max_normalize(imgs):
         """Normalize the images to [0, 1].
         Args:
             imgs (torch.Tensor) (N, C, H, W): Te images to be normalized.
+
         Returns:
             imgs (torch.Tensor) (N, C, H, W): The normalized images.
         """
