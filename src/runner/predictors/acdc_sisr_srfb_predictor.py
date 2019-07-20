@@ -65,7 +65,7 @@ class AcdcSISRSRFBPredictor(AcdcSISRPredictor):
                         self._dump_video(output_dir / video_name, sr_imgs)
                         sr_imgs = []
 
-                    output = self._min_max_normalize(outputs[-1]) * 255
+                    output = self._denormalize(outputs[-1])
                     sr_img = output.squeeze().detach().cpu().numpy().astype(np.uint8)
                     sr_imgs.append(sr_img)
                     tmp_sid = sid
@@ -116,8 +116,8 @@ class AcdcSISRSRFBPredictor(AcdcSISRPredictor):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the min-max normalization before computing the metric.
-        output, target = self._min_max_normalize(outputs[-1]), self._min_max_normalize(target)
+        # Do the denormalization to [0-255] before computing the metric.
+        output, target = self._denormalize(outputs[-1]), self._denormalize(target)
 
         metrics = [metric_fn(output, target) for metric_fn in self.metric_fns]
         return metrics
