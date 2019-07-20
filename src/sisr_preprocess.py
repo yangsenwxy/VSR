@@ -27,6 +27,9 @@ def main(args):
     test_paths = sorted((data_dir / 'testing').glob('**/*4d.nii.gz'))
 
     for type_, paths in zip(['train', 'valid', 'test'], [train_paths, valid_paths, test_paths]):
+        pixel_sum = 0.0
+        pixel_square = 0.0
+        count = 0
         for path in paths:
             patient_name = path.parts[-2]
             logging.info(f'Process {patient_name}.')
@@ -38,6 +41,15 @@ def main(args):
             # Read in the 4D MRI scans.
             img = nib.load(str(path)).get_data().astype(np.float32) # (H, W, D, T)
 
+            # Rescale image to 0-255.
+            if img.max() > 255.0:
+                img = (img - img.min()) / (img.max() - img.min()) * 255.0
+
+            # Record the sum of the 4D MRI scans.
+            pixel_sum += img.sum()
+            pixel_square += (img ** 2).sum()
+            count += img.shape[0] * img.shape[1] * img.shape[2] * img.shape[3]
+
             # Save each sequence of the slices of the scan into single file.
             for s in range(img.shape[2]):
                 for t in range(img.shape[3]):
@@ -45,6 +57,11 @@ def main(args):
                     nib.save(nib.Nifti1Image(_img, np.eye(4)),
                             str(output_dir / type_ / patient_name / f'{patient_name}_2d_slice{s+1:0>2d}_frame{t+1:0>2d}.nii.gz'))
 
+        # Calculate the mean and the std.
+        mean = pixel_sum / count
+        E_X_square = pixel_square / count
+        std = np.sqrt(E_X_square - mean ** 2)
+        print(f"{type_}: mean {mean:.4f}, std {std:.4f}")
 
 def _parse_args():
     parser = argparse.ArgumentParser(description="The data preprocessing.")
