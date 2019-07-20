@@ -43,4 +43,4 @@ class AcdcSISRDataset(BaseDataset):
         lr_img = self.degrade(hr_img)
         hr_img = self.post_transforms(hr_img).permute(2, 0, 1).contiguous()
         lr_img = self.post_transforms(lr_img).permute(2, 0, 1).contiguous()
-        return {'lr_img': lr_img, 'hr_img': hr_img}
+        return {'lr_img': lr_img, 'hr_img': hr_img, 'index': index}
