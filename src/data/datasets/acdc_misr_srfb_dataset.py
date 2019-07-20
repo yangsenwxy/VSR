@@ -87,4 +87,4 @@ class AcdcMISRSRFBDataset(BaseDataset):
         hr_imgs = self.post_transforms(*hr_imgs)
         lr_imgs = [img.permute(2, 0, 1).contiguous() for img in lr_imgs]
         hr_imgs = [img.permute(2, 0, 1).contiguous() for img in hr_imgs]
-        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs}
+        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'index': index}
