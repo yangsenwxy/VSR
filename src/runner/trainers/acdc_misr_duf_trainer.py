@@ -1,6 +1,6 @@
 import torch
 
-from src.runner.trainers.acdc_misr_trainer import AcdcMISRTrainer
+from src.runner.trainers import AcdcMISRTrainer
 
 
 class AcdcMISRDUFTrainer(AcdcMISRTrainer):
