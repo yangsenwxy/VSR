@@ -107,5 +107,9 @@ venv.bak/
 # Experimental configs and results
 configs/
 !configs/train/example_config.yaml
+!configs/train/acdc_sisr_config.yaml
+!configs/train/acdc_misr_config.yaml
 !configs/test/example_config.yaml
+!configs/test/acdc_sisr_config.yaml
+!configs/test/acdc_misr_config.yaml
 models/
