@@ -9,9 +9,9 @@ class PSNR(nn.Module):
     """The PSNR score.
     Args:
         size_average (bool): Whether to average the PSNR score all over the samples in the batch (default: True).
-        max_value (int): The maximum pixel value of the image (default: 1).
+        max_value (int): The maximum pixel value of the image (default: 255).
     """
-    def __init__(self, size_average=True, max_value=1):
+    def __init__(self, size_average=True, max_value=255):
         super().__init__()
         self.size_average = size_average
         self.max_value = max_value
@@ -45,9 +45,9 @@ class SSIM(nn.Module):
         dim (int): The dimention of the image (default: 2).
         channels (int): The number of the image channels (default: 1).
         size_average (bool): Whether to average the SSIM score all over the samples in the batch (default: True).
-        value_range (int): The difference between the maximum and the minimum pixel value of the image. The common values are 1, 2 and 255 (default: 1).
+        value_range (int): The difference between the maximum and the minimum pixel value of the image. The common values are 1, 2 and 255 (default: 255).
     """
-    def __init__(self, dim=2, channels=1, size_average=True, value_range=1):
+    def __init__(self, dim=2, channels=1, size_average=True, value_range=255):
         super().__init__()
         self.dim = dim
         self.channels = channels

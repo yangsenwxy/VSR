@@ -43,16 +43,14 @@ class AcdcMISRTrainer(BaseTrainer):
         raise NotImplementedError
 
     @staticmethod
-    def _min_max_normalize(imgs):
-        """Normalize the images to [0, 1].
+    def _denormalize(imgs):
+        """Denormalize the images to [0-255].
         Args:
-            imgs (torch.Tensor) (N, C, H, W): Te images to be normalized.
+            imgs (torch.Tensor) (N, C, H, W): Te images to be denormalized.
 
         Returns:
-            imgs (torch.Tensor) (N, C, H, W): The normalized images.
+            imgs (torch.Tensor) (N, C, H, W): The denormalized images.
         """
         imgs = imgs.clone()
-        for img in imgs:
-            min, max = img.min(), img.max()
-            img.sub_(min).div_(max - min + 1e-10)
+        imgs = imgs.mul_(39.616).add_(40.951).clamp(0, 255).round()
         return imgs

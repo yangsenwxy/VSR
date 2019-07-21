@@ -64,7 +64,7 @@ class AcdcMISRDUFPredictor(AcdcMISRPredictor):
                         self._dump_video(output_dir / f'{tmp_sid}.gif', sr_imgs)
                         sr_imgs = []
 
-                    output = self._min_max_normalize(output) * 255
+                    output = self._denormalize(output)
                     sr_img = output.squeeze().detach().cpu().numpy().astype(np.uint8)
                     sr_imgs.append(sr_img)
                     tmp_sid = sid
@@ -124,8 +124,8 @@ class AcdcMISRDUFPredictor(AcdcMISRPredictor):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the min-max normalization before computing the metric.
-        output, target = self._min_max_normalize(output), self._min_max_normalize(target)
+        # Do the denormalization to [0-255] before computing the metric.
+        output, target = self._denormalize(output), self._denormalize(target)
 
         metrics = [metric_fn(output, target) for metric_fn in self.metric_fns]
         return metrics
