@@ -34,9 +34,9 @@ class AcdcMISRSRFBTrainer(AcdcMISRTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the min-max normalization before computing the metric.
-        outputs = list(map(self._min_max_normalize, outputs))
-        targets = list(map(self._min_max_normalize, targets))
+        # Do the denormalization to [0-255] before computing the metric.
+        outputs = list(map(self._denormalize, outputs))
+        targets = list(map(self._denormalize, targets))
 
         # Average the metric of every frame in a video.
         metrics = []

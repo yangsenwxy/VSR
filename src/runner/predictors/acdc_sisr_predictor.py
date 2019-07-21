@@ -75,7 +75,7 @@ class AcdcSISRPredictor(BasePredictor):
                         self._dump_video(output_dir / video_name, sr_imgs)
                         sr_imgs = []
 
-                    output = self._min_max_normalize(output) * 255
+                    output = self._denormalize(output)
                     sr_img = output.squeeze().detach().cpu().numpy().astype(np.uint8)
                     sr_imgs.append(sr_img)
                     tmp_sid = sid
@@ -134,8 +134,8 @@ class AcdcSISRPredictor(BasePredictor):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the min-max normalization before computing the metric.
-        output, target = self._min_max_normalize(output), self._min_max_normalize(target)
+        # Do the denormalization to [0-255] before computing the metric.
+        output, target = self._denormalize(output), self._denormalize(target)
 
         metrics = [metric_fn(output, target) for metric_fn in self.metric_fns]
         return metrics
@@ -151,16 +151,14 @@ class AcdcSISRPredictor(BasePredictor):
                 writer.append_data(img)
 
     @staticmethod
-    def _min_max_normalize(imgs):
-        """Normalize the images to [0, 1].
+    def _denormalize(imgs):
+        """Denormalize the images to [0-255].
         Args:
-            imgs (torch.Tensor) (N, C, H, W): Te images to be normalized.
+            imgs (torch.Tensor) (N, C, H, W): Te images to be denormalized.
 
         Returns:
-            imgs (torch.Tensor) (N, C, H, W): The normalized images.
+            imgs (torch.Tensor) (N, C, H, W): The denormalized images.
         """
         imgs = imgs.clone()
-        for img in imgs:
-            min, max = img.min(), img.max()
-            img.sub_(min).div_(max - min + 1e-10)
+        imgs = imgs.mul_(39.616).add_(40.951).clamp(0, 255).round()
         return imgs
