@@ -1,0 +1,74 @@
+main:
+    random_seed: 'vsr'
+    saved_dir: 'path/to/experimental/results'
+    
+dataset:
+    name: 'AcdcMISRDataset'
+    kwargs:
+        data_dir: 'path/to/data'
+        transforms:
+            - name: 'RandomElasticDeformation'
+              kwargs:
+                  prob: 0.75
+            - name: 'RandomCrop'
+              kwargs:
+                  size: [128, 128]
+        post_transforms:
+            - name: 'Normalize'
+              kwargs:
+                  means: [40.951]
+                  stds: [39.616]
+            - name: 'ToTensor'
+        degrade:
+            - name: 'Degrade'
+              kwargs:
+                  method: 'FFT'
+                  downscale_factor: 4
+        num_frames: value
+
+dataloader:
+    name: 'Dataloader'
+    kwargs:
+        train_batch_size: value
+        valid_batch_size: 1
+        shuffle: true
+        num_workers: 8
+
+net:
+    name: 'MyNet'
+    kwargs:
+        kwarg1: value1
+        kwarg2: value2
+
+losses:
+    - name: 'MyLoss'
+      weight: 1.0
+
+metrics:
+    - name: 'PSNR'
+    - name: 'SSIM'
+
+optimizer:
+    name: 'Adam'
+    kwargs:
+        lr: 0.0001
+        weight_decay: 0
+
+logger:
+    name: 'AcdcMISRLogger'
+    kwargs:
+        dummy_input: [16, 1, 32, 32]
+
+monitor:
+    name: 'Monitor'
+    kwargs:
+        mode: 'min'
+        target: 'Loss'
+        saved_freq: 10
+        early_stop: 0
+
+trainer:
+    name: 'AcdcMISRTrainer'
+    kwargs:
+        device: 'cuda:0'
+        num_epochs: 1000
