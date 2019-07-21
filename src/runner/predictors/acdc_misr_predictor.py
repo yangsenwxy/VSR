@@ -41,5 +41,5 @@ class AcdcMISRPredictor(BasePredictor):
             imgs (torch.Tensor) (N, C, H, W): The denormalized images.
         """
         imgs = imgs.clone()
-        imgs = imgs.mul_(39.616).add_(40.951).clamp(0, 255)
+        imgs = imgs.mul_(39.616).add_(40.951).clamp(0, 255).round()
         return imgs
