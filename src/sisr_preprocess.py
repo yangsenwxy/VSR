@@ -61,7 +61,7 @@ def main(args):
         mean = pixel_sum / count
         E_X_square = pixel_square / count
         std = np.sqrt(E_X_square - mean ** 2)
-        print(f"{type_}: mean {mean:.4f}, std {std:.4f}")
+        logging.info(f'{type_} dataset: mean {mean:.4f}, std {std:.4f}.')
 
 def _parse_args():
     parser = argparse.ArgumentParser(description="The data preprocessing.")
