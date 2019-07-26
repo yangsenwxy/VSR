@@ -48,14 +48,16 @@ class AcdcSISRTrainer(BaseTrainer):
         return metrics
 
     @staticmethod
-    def _denormalize(imgs):
+    def _denormalize(imgs, mean=53.434, std=47.652):
         """Denormalize the images to [0-255].
         Args:
             imgs (torch.Tensor) (N, C, H, W): Te images to be denormalized.
+            mean (float): The mean of the training data.
+            std (float): The standard deviation of the training data.
 
         Returns:
             imgs (torch.Tensor) (N, C, H, W): The denormalized images.
         """
         imgs = imgs.clone()
-        imgs = imgs.mul_(39.616).add_(40.951).clamp(0, 255).round()
+        imgs = (imgs * std + mean).clamp(0, 255) / 255
         return imgs
