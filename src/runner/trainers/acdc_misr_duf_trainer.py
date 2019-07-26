@@ -41,6 +41,8 @@ class AcdcMISRDUFTrainer(AcdcMISRTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
+        # Do the denormalization to [0-255] before computing the metric.
         output, target = self._denormalize(output), self._denormalize(target)
+
         metrics = [metric(output, target) for metric in self.metric_fns]
         return metrics
