@@ -41,7 +41,7 @@ class AcdcSISRTrainer(BaseTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the min-max normalization before computing the metric.
+        # Do the denormalization to [0-255] before computing the metric.
         output, target = self._denormalize(output), self._denormalize(target)
 
         metrics = [metric_fn(output, target) for metric_fn in self.metric_fns]
