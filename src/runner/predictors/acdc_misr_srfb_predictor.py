@@ -57,7 +57,7 @@ class AcdcMISRSRFBPredictor(AcdcMISRPredictor):
                         _metrics = [metric.item() for metric in _metrics]
                         results.append([filename + f'_frame{t+1:0>2d}', *_metrics, *_losses])
 
-                    outputs = [self._denormalize(output) for output in outputs]
+                    outputs = [self._denormalize(output) * 255 for output in outputs]
                     sr_imgs = [output.squeeze().detach().cpu().numpy().astype(np.uint8)
                                for output in outputs]
 
