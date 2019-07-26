@@ -39,11 +39,16 @@ def main(args):
                 (output_dir / type_/ patient_name).mkdir(parents=True)
 
             # Read in the 4D MRI scans.
-            img = nib.load(str(path)).get_data().astype(np.float32) # (H, W, D, T)
+            img = nib.load(str(path)).get_data() # (H, W, D, T)
 
-            # Rescale image to 0-255.
-            if img.max() > 255.0:
-                img = (img - img.min()) / (img.max() - img.min()) * 255.0
+            # If the image dtype is 'int16', remove the outlier and then apply the min-max normalization.
+            if img.dtype == 'int16':
+                hist, _ = np.histogram(img.ravel(), bins=range(int(img.max()) + 1), density=True)
+                cdf = np.cumsum(hist)
+                idx = (np.abs(cdf - 0.995)).argmin()
+                img[img > idx] = idx
+                img = ((img - img.min()) / (img.max() - img.min()) * 255.0).round()
+            img = img.astype(np.float32)
 
             # Record the sum of the 4D MRI scans.
             pixel_sum += img.sum()
