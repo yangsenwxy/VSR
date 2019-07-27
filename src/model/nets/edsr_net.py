@@ -33,7 +33,7 @@ class EDSRNet(BaseNet):
 
     def forward(self, input):
         head = self.head(input)
-        body = self.body(head)
+        body = self.body(head) + head
         output = self.tail(body)
         return output
 
