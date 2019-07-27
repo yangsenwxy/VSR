@@ -1,22 +1,30 @@
 import torch
 import torch.nn as nn
+import math
 
 from src.model.nets.base_net import BaseNet
 
 
-class SRFBGatingMISRNet(BaseNet):
-    """The improved version of the SRFBMISRNet by adding gating mechanism.
+class DRFSISRNet(BaseNet):
+    """The implementation of the Deep Recurrent Feedback Network (DRFN) for the Single-Image Super-Resolution.
+
+    The architecture is mainly inspired by the Super-Resolution FeedBack Network (SRFBN) and has some modification.
+    First, the global residual skip connection concatenates the features before and after the feedback block.
+    Second, the simple deconvolution is replaced by the PixelShuffle module as used in the EDSR (ref: https://arxiv.org/pdf/1707.02921.pdf).
+
     Args:
         in_channels (int): The input channels.
         out_channels (int): The output channels.
+        num_steps (int): The number of the iterations.
         num_features (int): The number of the internel feature maps.
         num_groups (int): The number of the projection groups in the feedback block.
         upscale_factor (int): The upscale factor (2, 3, 4 or 8).
     """
-    def __init__(self, in_channels, out_channels, num_features, num_groups, upscale_factor):
+    def __init__(self, in_channels, out_channels, num_steps, num_features, num_groups, upscale_factor):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.num_steps = num_steps
         self.num_features = num_features
         self.num_groups = num_groups
 
@@ -24,24 +32,25 @@ class SRFBGatingMISRNet(BaseNet):
             raise ValueError(f'The upscale factor should be 2, 3, 4 or 8. Got {upscale_factor}.')
         self.upscale_factor = upscale_factor
 
-        self.lrf_block = _LRFBlock(in_channels, num_features) # The LR feature extraction block.
+        self.in_block = _InBlock(in_channels, num_features) # The input block.
         self.f_block = _FBlock(num_features, num_groups, upscale_factor) # The feedback block.
-        self.r_block = _RBlock(num_features, out_channels, upscale_factor) # The reconstruction block.
+        self.out_block = _OutBlock(num_features, out_channels, upscale_factor) # The output block.
 
-    def forward(self, inputs):
+    def forward(self, input):
         outputs = []
-        for i, input in enumerate(inputs):
-            features = self.lrf_block(input)
+        for i in range(self.num_steps):
+            in_features = self.in_block(input)
             if i == 0:
-                self.f_block.hidden_state = features # Reset the hidden state of the feedback block.
-            features = self.f_block(features)
-            features = input + features # The global residual skip connection.
-            output = self.r_block(features)
+                self.f_block.hidden_state = in_features # Reset the hidden state of the feedback block.
+            f_features = self.f_block(in_features)
+            self.f_block.hidden_state = f_features # Set the hidden state of the feedback block to the current feedback block output.
+            features = in_features + f_features # The global residual skip connection.
+            output = self.out_block(features)
             outputs.append(output)
         return outputs
 
 
-class _LRFBlock(nn.Sequential):
+class _InBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.add_module('conv1', nn.Conv2d(in_channels, 4 * out_channels, kernel_size=3, padding=1))
@@ -97,13 +106,6 @@ class _FBlock(nn.Module):
         self.out_block.add_module('conv', nn.Conv2d(num_features * num_groups, num_features, kernel_size=1))
         self.out_block.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
 
-        self.reset_gate = nn.Sequential()
-        self.reset_gate.add_module('conv', nn.Conv2d(num_features * 2, 1, kernel_size=1))
-        self.reset_gate.add_module('sigmoid', nn.Sigmoid())
-        self.update_gate = nn.Sequential()
-        self.update_gate.add_module('conv', nn.Conv2d(num_features * 2, 1, kernel_size=1))
-        self.update_gate.add_module('sigmoid', nn.Sigmoid())
-
         self._hidden_state = None
 
     @property
@@ -115,12 +117,7 @@ class _FBlock(nn.Module):
         self._hidden_state = state
 
     def forward(self, input):
-        # Compute reset map (r) and update map (z).
         features = torch.cat([input, self.hidden_state], dim=1)
-        r = self.reset_gate(features) # (N, 1, H, W)
-        z = self.update_gate(features) # (N, 1, H, W)
-
-        features = torch.cat([input, r * self.hidden_state], dim=1)
         lr_features = self.in_block(features)
 
         lr_features_list, hr_features_list = [lr_features], []
@@ -134,22 +131,18 @@ class _FBlock(nn.Module):
 
         features = torch.cat(lr_features_list[1:], dim=1)
         output = self.out_block(features)
-        self.hidden_state = z * self.hidden_state + (1 - z) * output # Reset the current hidden state.
         return output
 
 
-class _RBlock(nn.Sequential):
+class _OutBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels, upscale_factor):
         super().__init__()
-        if upscale_factor == 2:
-            kernel_size, stride, padding = 6, 2, 2
+        if (math.log(upscale_factor, 2) % 1) == 0:
+            for i in range(int(math.log(upscale_factor, 2))):
+                self.add_module(f'conv{i+1}', nn.Conv2d(in_channels, 4 * in_channels, kernel_size=3, padding=1))
+                self.add_module(f'pixelshuffle{i+1}', nn.PixelShuffle(2))
+            self.add_module(f'conv{i+2}', nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))
         elif upscale_factor == 3:
-            kernel_size, stride, padding = 7, 3, 2
-        elif upscale_factor == 4:
-            kernel_size, stride, padding = 8, 4, 2
-        elif upscale_factor == 8:
-            kernel_size, stride, padding = 12, 8, 2
-        self.add_module('deconv1', nn.ConvTranspose2d(in_channels, in_channels, kernel_size=kernel_size, stride=stride, padding=padding))
-
-        self.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
-        self.add_module('conv2', nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))
+            self.add_module('conv1', nn.Conv2d(in_channels, 9 * in_channels, kernel_size=3, padding=1))
+            self.add_module('pixelshuffle1', nn.PixelShuffle(3))
+            self.add_module('conv2', nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))

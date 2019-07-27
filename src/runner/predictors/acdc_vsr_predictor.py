@@ -5,11 +5,11 @@ import numpy as np
 from scipy.misc import imsave
 from tqdm import tqdm
 
-from src.runner.predictors import AcdcMISRPredictor
+from src.runner.predictors.base_predictor import BasePredictor
 
 
-class AcdcMISRSRFBPredictor(AcdcMISRPredictor):
-    """The ACDC predictor for the Multi-Images Super Resolution using the SRFBNet-based networks.
+class AcdcVSRPredictor(BasePredictor):
+    """The ACDC predictor for the Video Super-Resolution.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -126,7 +126,7 @@ class AcdcMISRSRFBPredictor(AcdcMISRPredictor):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the denormalization to [0-255] before computing the metric.
+        # Do the denormalization before computing the metric.
         outputs = list(map(self._denormalize, outputs))
         targets = list(map(self._denormalize, targets))
 

@@ -1,15 +1,17 @@
 import torch
 import torch.nn as nn
+import math
 
 from src.model.nets.base_net import BaseNet
 
 
-class SRFBMISRNet(BaseNet):
-    """The implementation of the super-resolution feedback network (SRFBN) for MISR task.
+class DRFNet(BaseNet):
+    """The implementation of the Deep Recurrent Feedback Network (DRFN) for the Video Super-Resolution.
 
-    First, the global residual skip connection do not perform upsampling and the feature maps are concatenated before the reconstruction block.
-    Second, the model inputs are multiple different LR images.
-    (ref: https://arxiv.org/abs/1903.09814, https://github.com/Paper99/SRFBN_CVPR19/blob/master/networks/srfbn_arch.py).
+    The architecture is mainly inspired by the Super-Resolution FeedBack Network (SRFBN) and has some modification.
+    First, it's for the Video Super-Resolution.
+    Second, the global residual skip connection concatenates the features before and after the feedback block.
+    Last, the simple deconvolution is replaced by the PixelShuffle module as used in the EDSR (ref: https://arxiv.org/pdf/1707.02921.pdf).
 
     Args:
         in_channels (int): The input channels.
@@ -29,25 +31,25 @@ class SRFBMISRNet(BaseNet):
             raise ValueError(f'The upscale factor should be 2, 3, 4 or 8. Got {upscale_factor}.')
         self.upscale_factor = upscale_factor
 
-        self.lrf_block = _LRFBlock(in_channels, num_features) # The LR feature extraction block.
+        self.in_block = _InBlock(in_channels, num_features) # The input block.
         self.f_block = _FBlock(num_features, num_groups, upscale_factor) # The feedback block.
-        self.r_block = _RBlock(num_features, out_channels, upscale_factor) # The reconstruction block.
+        self.out_block = _OutBlock(num_features, out_channels, upscale_factor) # The output block.
 
     def forward(self, inputs):
         outputs = []
         for i, input in enumerate(inputs):
-            features = self.lrf_block(input)
+            in_features = self.in_block(input)
             if i == 0:
-                self.f_block.hidden_state = features # Reset the hidden state of the feedback block.
-            features = self.f_block(features)
-            self.f_block.hidden_state = features # Set the hidden state of the feedback block to the current output.
-            features = input + features # The global residual skip connection.
-            output = self.r_block(features)
+                self.f_block.hidden_state = in_features # Reset the hidden state of the feedback block.
+            f_features = self.f_block(in_features)
+            self.f_block.hidden_state = f_features # Set the hidden state of the feedback block to the current feedback block output.
+            features = in_features + f_features # The global residual skip connection.
+            output = self.out_block(features)
             outputs.append(output)
         return outputs
 
 
-class _LRFBlock(nn.Sequential):
+class _InBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.add_module('conv1', nn.Conv2d(in_channels, 4 * out_channels, kernel_size=3, padding=1))
@@ -131,18 +133,15 @@ class _FBlock(nn.Module):
         return output
 
 
-class _RBlock(nn.Sequential):
+class _OutBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels, upscale_factor):
         super().__init__()
-        if upscale_factor == 2:
-            kernel_size, stride, padding = 6, 2, 2
+        if (math.log(upscale_factor, 2) % 1) == 0:
+            for i in range(int(math.log(upscale_factor, 2))):
+                self.add_module(f'conv{i+1}', nn.Conv2d(in_channels, 4 * in_channels, kernel_size=3, padding=1))
+                self.add_module(f'pixelshuffle{i+1}', nn.PixelShuffle(2))
+            self.add_module(f'conv{i+2}', nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))
         elif upscale_factor == 3:
-            kernel_size, stride, padding = 7, 3, 2
-        elif upscale_factor == 4:
-            kernel_size, stride, padding = 8, 4, 2
-        elif upscale_factor == 8:
-            kernel_size, stride, padding = 12, 8, 2
-        self.add_module('deconv1', nn.ConvTranspose2d(in_channels, in_channels, kernel_size=kernel_size, stride=stride, padding=padding))
-
-        self.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
-        self.add_module('conv2', nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))
+            self.add_module('conv1', nn.Conv2d(in_channels, 9 * in_channels, kernel_size=3, padding=1))
+            self.add_module('pixelshuffle1', nn.PixelShuffle(3))
+            self.add_module('conv2', nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))

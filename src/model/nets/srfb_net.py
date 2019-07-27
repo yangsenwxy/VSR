@@ -1,14 +1,15 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from src.model.nets.base_net import BaseNet
 
 
 class SRFBNet(BaseNet):
-    """The implementation of super-resolution feedback network (SRFBN) with some modifications.
+    """The implementation of the super-resolution feedback network (SRFBN).
 
-    The global residual skip connection do not perform upsampling and the feature maps are concatenated before the reconstruction block.
-    (ref: https://arxiv.org/abs/1903.09814, https://github.com/Paper99/SRFBN_CVPR19/blob/master/networks/srfbn_arch.py).
+    Refs: https://arxiv.org/abs/1903.09814,
+          https://github.com/Paper99/SRFBN_CVPR19/blob/master/networks/srfbn_arch.py).
 
     Args:
         in_channels (int): The input channels.
@@ -41,9 +42,10 @@ class SRFBNet(BaseNet):
             if i == 0:
                 self.f_block.hidden_state = features # Reset the hidden state of the feedback block.
             features = self.f_block(features)
-            self.f_block.hidden_state = features # Set the hidden state of the feedback block to the current output.
-            features = input + features # The global residual skip connection.
-            output = self.r_block(features)
+            self.f_block.hidden_state = features # Set the hidden state of the feedback block to the current feedback block output.
+            residual_img = self.r_block(features)
+            upscaled_input = F.interpolate(input, scale_factor=self.upscale_factor, mode='bilinear', align_corners=False)
+            output = upscaled_input + residual_img # The global residual skip connection.
             outputs.append(output)
         return outputs
 
