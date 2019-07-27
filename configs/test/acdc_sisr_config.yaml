@@ -16,8 +16,8 @@ dataset:
         post_transforms:
             - name: 'Normalize'
               kwargs:
-                  means: [40.951]
-                  stds: [39.616]
+                  means: [53.434]
+                  stds: [47.652]
             - name: 'ToTensor'
         degrade:
             - name: 'Degrade'
