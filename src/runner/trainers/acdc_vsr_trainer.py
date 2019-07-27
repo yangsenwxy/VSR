@@ -1,4 +1,5 @@
 import torch
+from tqdm import tqdm
 
 from src.runner.trainers.base_trainer import BaseTrainer
 
