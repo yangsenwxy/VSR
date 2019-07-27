@@ -3,3 +3,4 @@ from .acdc_sisr_srfb_predictor import AcdcSISRSRFBPredictor
 from .acdc_misr_predictor import AcdcMISRPredictor
 from .acdc_misr_srfb_predictor import AcdcMISRSRFBPredictor
 from .acdc_misr_duf_predictor import AcdcMISRDUFPredictor
+from .acdc_vsr_predictor import AcdcVSRPredictor
