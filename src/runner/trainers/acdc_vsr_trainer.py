@@ -1,11 +1,11 @@
 import torch
 from tqdm import tqdm
 
-from src.runner.trainers import AcdcMISRTrainer
+from src.runner.trainers.base_trainer import BaseTrainer
 
 
-class AcdcMISRSRFBTrainer(AcdcMISRTrainer):
-    """The ACDC trainer for the Multi-Images Super Resolution using the SRFBNet-based networks.
+class AcdcVSRTrainer(BaseTrainer):
+    """The ACDC trainer for the Video Super-Resolution.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -33,6 +33,7 @@ class AcdcMISRSRFBTrainer(AcdcMISRTrainer):
         for batch in trange:
             batch = self._allocate_data(batch)
             inputs, targets = self._get_inputs_targets(batch)
+            T = len(inputs)
             if mode == 'training':
                 outputs = self.net(inputs)
                 losses = self._compute_losses(outputs, targets)
@@ -48,7 +49,6 @@ class AcdcMISRSRFBTrainer(AcdcMISRTrainer):
             metrics =  self._compute_metrics(outputs, targets)
 
             batch_size = self.train_dataloader.batch_size if mode == 'training' else self.valid_dataloader.batch_size
-            T = len(inputs)
             self._update_log(log, batch_size, T, loss, losses, metrics)
             count += batch_size * T
             trange.set_postfix(**dict((key, f'{value / count: .3f}') for key, value in log.items()))
@@ -57,21 +57,16 @@ class AcdcMISRSRFBTrainer(AcdcMISRTrainer):
             log[key] /= count
         return log, batch, outputs
 
-    def _update_log(self, log, batch_size, T, loss, losses, metrics):
-        """Update the log.
+    def _get_inputs_targets(self, batch):
+        """Specify the data inputs and targets.
         Args:
-            log (dict): The log to be updated.
-            batch_size (int): The batch size.
-            T (int): The total number of the frames.
-            loss (torch.Tensor): The weighted sum of the computed losses.
-            losses (sequence of torch.Tensor): The computed losses.
-            metrics (sequence of torch.Tensor): The computed metrics.
+            batch (dict): A batch of data.
+
+        Returns:
+            inputs (list of torch.Tensor): The data inputs.
+            targets (list of torch.Tensor): The data targets.
         """
-        log['Loss'] += loss.item() * batch_size * T
-        for loss_fn, loss in zip(self.loss_fns, losses):
-            log[loss_fn.__class__.__name__] += loss.item() * batch_size * T
-        for metric_fn, metric in zip(self.metric_fns, metrics):
-            log[metric_fn.__class__.__name__] += metric.item() * batch_size * T
+        return batch['lr_imgs'], batch['hr_imgs']
 
     def _compute_losses(self, outputs, targets):
         """Compute the losses.
@@ -98,7 +93,7 @@ class AcdcMISRSRFBTrainer(AcdcMISRTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the denormalization to [0-255] before computing the metric.
+        # Do the denormalization before computing the metric.
         outputs = list(map(self._denormalize, outputs))
         targets = list(map(self._denormalize, targets))
 
@@ -108,3 +103,34 @@ class AcdcMISRSRFBTrainer(AcdcMISRTrainer):
             metric = torch.stack([metric_fn(output, target) for output, target in zip(outputs, targets)]).mean()
             metrics.append(metric)
         return metrics
+
+    def _update_log(self, log, batch_size, T, loss, losses, metrics):
+        """Update the log.
+        Args:
+            log (dict): The log to be updated.
+            batch_size (int): The batch size.
+            T (int): The total number of the frames.
+            loss (torch.Tensor): The weighted sum of the computed losses.
+            losses (sequence of torch.Tensor): The computed losses.
+            metrics (sequence of torch.Tensor): The computed metrics.
+        """
+        log['Loss'] += loss.item() * batch_size * T
+        for loss_fn, loss in zip(self.loss_fns, losses):
+            log[loss_fn.__class__.__name__] += loss.item() * batch_size * T
+        for metric_fn, metric in zip(self.metric_fns, metrics):
+            log[metric_fn.__class__.__name__] += metric.item() * batch_size * T
+
+    @staticmethod
+    def _denormalize(imgs, mean=53.434, std=47.652):
+        """Denormalize the images to [0-255].
+        Args:
+            imgs (torch.Tensor) (N, C, H, W): Te images to be denormalized.
+            mean (float): The mean of the training data.
+            std (float): The standard deviation of the training data.
+
+        Returns:
+            imgs (torch.Tensor) (N, C, H, W): The denormalized images.
+        """
+        imgs = imgs.clone()
+        imgs = (imgs * std + mean).clamp(0, 255) / 255
+        return imgs

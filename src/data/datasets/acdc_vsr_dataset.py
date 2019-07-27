@@ -8,7 +8,7 @@ from src.data.datasets.base_dataset import BaseDataset
 from src.data.transforms import compose
 
 
-class AcdcMISRSRFBDataset(BaseDataset):
+class AcdcVSRDataset(BaseDataset):
     """The dataset of the Automated Cardiac Diagnosis Challenge (ACDC) in MICCAI 2017 (ref: https://www.creatis.insa-lyon.fr/Challenge/acdc/index.html) for Multi-Image Super-Resolution using SRFB-based networks.
     Args:
         transforms (Box): The preprocessing and augmentation techiques applied to the training data.
@@ -29,12 +29,12 @@ class AcdcMISRSRFBDataset(BaseDataset):
         self.downscale_factor = degrade[0].kwargs.downscale_factor
 
         # Save the data path and the target frame index for training; only need to save the data path
-        # for validation because SRFBNet-based networks could process dynamic length of videos.
+        # for validation to process dynamic length of videos.
         if self.type == 'train':
             self.data = []
             data_paths = sorted((self.data_dir / self.type).glob('**/*2d+1d*.nii.gz'))
             for data_path in data_paths:
-                T = nib.load(str(data_path)).get_data().shape[-1]
+                T = nib.load(str(data_path)).header.get_data_shape()[-1]
                 self.data.extend([(data_path, t) for t in range(T)])
         else:
             self.data_paths = sorted((self.data_dir / self.type).glob('**/*2d+1d*.nii.gz'))
