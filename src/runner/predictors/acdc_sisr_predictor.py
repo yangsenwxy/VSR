@@ -75,7 +75,7 @@ class AcdcSISRPredictor(BasePredictor):
                         self._dump_video(output_dir / video_name, sr_imgs)
                         sr_imgs = []
 
-                    output = self._denormalize(output)
+                    output = (self._denormalize(output) * 255).round()
                     sr_img = output.squeeze().detach().cpu().numpy().astype(np.uint8)
                     sr_imgs.append(sr_img)
                     tmp_sid = sid
