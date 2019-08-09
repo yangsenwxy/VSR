@@ -27,7 +27,7 @@ class PSNR(nn.Module):
         """
         reduced_dims = list(range(1, output.dim()))
         mse = F.mse_loss(output, target, reduction='none').mean(reduced_dims)
-        psnr = 10 * torch.log10(self.max_value ** 2 / mse)
+        psnr = 10 * torch.log10(self.max_value ** 2 / (mse + 1e-10))
 
         if self.size_average:
             return psnr.mean()
@@ -64,9 +64,8 @@ class SSIM(nn.Module):
             raise ValueError(f"Only dim=2, 3 are supported. Received dim={dim}.")
 
         # The gaussian kernel is the product of the gaussian function of each dimension.
-        kernel_size, sigma = 11, 1.5
-        kernel_size = [kernel_size] * dim
-        sigma = [sigma] * dim
+        kernel_size = [11] * dim
+        sigma = [1.5] * dim
         meshgrids = torch.meshgrid([torch.arange(size, dtype=torch.float32) for size in kernel_size])
         kernel = 1
         for size, std, mgrid in zip(kernel_size, sigma, meshgrids):
