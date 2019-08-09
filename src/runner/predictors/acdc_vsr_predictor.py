@@ -1,9 +1,11 @@
 import csv
 import torch
 import logging
+import imageio
 import numpy as np
 from scipy.misc import imsave
 from tqdm import tqdm
+from pathlib import Path
 
 from src.runner.predictors.base_predictor import BasePredictor
 
@@ -11,8 +13,15 @@ from src.runner.predictors.base_predictor import BasePredictor
 class AcdcVSRPredictor(BasePredictor):
     """The ACDC predictor for the Video Super-Resolution.
     """
-    def __init__(self, **kwargs):
+    def __init__(self, saved_dir=None, export_prediction=False, **kwargs):
         super().__init__(**kwargs)
+        if export_prediction:
+            if self.test_dataloader.batch_size != 1:
+                raise ValueError(f'The batch size should be 1 if export_prediction is True. Got {self.test_dataloader.batch_size}.')
+            #if self.test_dataloader.shuffle is True:
+            #    raise ValueError('The shuffle should be False if export_prediction is True.')
+            self.saved_dir = Path(saved_dir)
+        self.export_prediction = export_prediction
 
     def predict(self):
         """The testing process.
@@ -151,3 +160,27 @@ class AcdcVSRPredictor(BasePredictor):
             log[loss_fn.__class__.__name__] += loss.item() * batch_size * T
         for metric_fn, metric in zip(self.metric_fns, metrics.mean(dim=0)):
             log[metric_fn.__class__.__name__] += metric.item() * batch_size * T
+
+    def _dump_video(self, path, imgs):
+        """To dump the video by concatenate the images.
+        Args:
+            path (Path): The path to save the video.
+            imgs (list): The images to form the video.
+        """
+        with imageio.get_writer(path) as writer:
+            for img in imgs:
+                writer.append_data(img)
+
+    @staticmethod
+    def _denormalize(imgs, mean=53.434, std=47.652):
+        """Denormalize the images to [0-255].
+        Args:
+            imgs (torch.Tensor) (N, C, H, W): Te images to be denormalized.
+            mean (float): The mean of the training data.
+            std (float): The standard deviation of the training data.
+        Returns:
+            imgs (torch.Tensor) (N, C, H, W): The denormalized images.
+        """
+        imgs = imgs.clone()
+        imgs = (imgs * std + mean).clamp(0, 255) / 255
+        return imgs
