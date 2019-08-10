@@ -4,7 +4,7 @@ from src.runner.trainers.base_trainer import BaseTrainer
 
 
 class AcdcSISRTrainer(BaseTrainer):
-    """The ACDC trainer for the Single-Image Super Resolution.
+    """The ACDC trainer for the Single-Image Super-Resolution.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -41,15 +41,13 @@ class AcdcSISRTrainer(BaseTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the denormalization to [0-255] before computing the metric.
         output, target = self._denormalize(output), self._denormalize(target)
-
         metrics = [metric_fn(output, target) for metric_fn in self.metric_fns]
         return metrics
 
     @staticmethod
-    def _denormalize(imgs, mean=53.434, std=47.652):
-        """Denormalize the images to [0-255].
+    def _denormalize(imgs, mean=54.089, std=48.084):
+        """Denormalize the images.
         Args:
             imgs (torch.Tensor) (N, C, H, W): Te images to be denormalized.
             mean (float): The mean of the training data.
