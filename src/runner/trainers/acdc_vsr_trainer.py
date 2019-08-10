@@ -93,7 +93,6 @@ class AcdcVSRTrainer(BaseTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the denormalization before computing the metric.
         outputs = list(map(self._denormalize, outputs))
         targets = list(map(self._denormalize, targets))
 
@@ -121,8 +120,8 @@ class AcdcVSRTrainer(BaseTrainer):
             log[metric_fn.__class__.__name__] += metric.item() * batch_size * T
 
     @staticmethod
-    def _denormalize(imgs, mean=53.434, std=47.652):
-        """Denormalize the images to [0-255].
+    def _denormalize(imgs, mean=54.089, std=48.084):
+        """Denormalize the images.
         Args:
             imgs (torch.Tensor) (N, C, H, W): Te images to be denormalized.
             mean (float): The mean of the training data.

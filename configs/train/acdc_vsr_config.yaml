@@ -1,0 +1,70 @@
+main:
+    random_seed: 'vsr'
+    saved_dir: 'path/to/experimental/results'
+    
+dataset:
+    name: 'AcdcVSRDataset'
+    kwargs:
+        data_dir: 'path/to/data'
+        downscale_factor: value
+        transforms:
+            - name: 'Normalize'
+              kwargs:
+                  means: [54.089]
+                  stds: [48.084]
+            - name: 'ToTensor'
+        augments:
+            - name: 'RandomHorizontalFlip'
+            - name: 'RandomVerticalFlip'
+            - name: 'RandomCropPatch'
+              kwargs:
+                  size: [32, 32]
+                  ratio: value
+        num_frames: value
+
+dataloader:
+    name: 'Dataloader'
+    kwargs:
+        train_batch_size: value
+        valid_batch_size: 1
+        shuffle: true
+        num_workers: 8
+
+net:
+    name: 'MyNet'
+    kwargs:
+        kwarg1: value1
+        kwarg2: value2
+
+losses:
+    - name: 'MyLoss'
+      weight: 1.0
+
+metrics:
+    - name: 'PSNR'
+    - name: 'SSIM'
+
+optimizer:
+    name: 'Adam'
+    kwargs:
+        lr: value
+        weight_decay: 0
+
+logger:
+    name: 'AcdcVSRLogger'
+    kwargs:
+        dummy_input: [16, 1, 32, 32]
+
+monitor:
+    name: 'Monitor'
+    kwargs:
+        mode: 'min'
+        target: 'Loss'
+        saved_freq: 10
+        early_stop: 0
+
+trainer:
+    name: 'AcdcVSRTrainer'
+    kwargs:
+        device: 'cuda:0'
+        num_epochs: 1000
