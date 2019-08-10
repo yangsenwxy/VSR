@@ -1,8 +1,7 @@
 import torch
 from torchvision.utils import make_grid
-from torch.utils.tensorboard import SummaryWriter
 
-from .base_logger import BaseLogger
+from src.callbacks.loggers.base_logger import BaseLogger
 
 
 class AcdcSISRSRFBLogger(BaseLogger):

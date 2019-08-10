@@ -4,7 +4,7 @@ from src.runner.trainers import AcdcSISRTrainer
 
 
 class AcdcSISRSRFBTrainer(AcdcSISRTrainer):
-    """The ACDC trainer for the Single-Image Super Resolution using the SRFBNet.
+    """The ACDC trainer for the Single-Image Super-Resolution using the SRFBNet.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -34,8 +34,6 @@ class AcdcSISRSRFBTrainer(AcdcSISRTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the denormalization to [0-255] before computing the metric.
         output, target = self._denormalize(outputs[-1]), self._denormalize(target)
-
         metrics = [metric_fn(output, target) for metric_fn in self.metric_fns]
         return metrics
