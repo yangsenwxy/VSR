@@ -148,8 +148,9 @@ def main(args):
         config.predictor.kwargs.update(kwargs)
         predictor = _get_instance(src.runner.predictors, config.predictor)
 
-        logging.info(f'Load the previous checkpoint from "{config.main.loaded_path}".')
-        predictor.load(Path(config.main.loaded_path))
+        if config.net.name != 'Bicubic':
+            logging.info(f'Load the previous checkpoint from "{config.main.loaded_path}".')
+            predictor.load(Path(config.main.loaded_path))
         logging.info('Start testing.')
         predictor.predict()
         logging.info('End testing.')
