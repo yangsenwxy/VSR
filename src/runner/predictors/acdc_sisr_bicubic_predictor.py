@@ -11,20 +11,19 @@ from src.runner.predictors.base_predictor import BasePredictor
 
 
 class AcdcSISRBicubicPredictor(BasePredictor):
-    """The ACDC predictor for the Single-Image Super Resolution.
+    """The ACDC predictor for the Single-Image Super-Resolution using the bicubic interpolation.
     Args:
         saved_dir (str): The directory to save the predicted videos, images and metrics (default: None).
-        export_prediction (bool): Whether to export the predicted video, images and metrics (default: False).
+        exported (bool): Whether to export the predicted video, images and metrics (default: False).
     """
-    def __init__(self, saved_dir=None, export_prediction=False, **kwargs):
+    def __init__(self, saved_dir=None, exported=False, **kwargs):
         super().__init__(**kwargs)
-        if export_prediction:
-            if self.test_dataloader.batch_size != 1:
-                raise ValueError(f'The batch size should be 1 if export_prediction is True. Got {self.test_dataloader.batch_size}.')
-            #if self.test_dataloader.shuffle is True:
-            #    raise ValueError('The shuffle should be False if export_prediction is True.')
+        if self.test_dataloader.batch_size != 1:
+            raise ValueError(f'The testing batch size should be 1. Got {self.test_dataloader.batch_size}.')
+
+        if exported:
             self.saved_dir = Path(saved_dir)
-        self.export_prediction = export_prediction
+        self.exported = exported
 
     def predict(self):
         """The testing process.
@@ -34,7 +33,7 @@ class AcdcSISRBicubicPredictor(BasePredictor):
                       total=len(self.test_dataloader),
                       desc='testing')
 
-        if self.export_prediction:
+        if self.exported:
             videos_dir = self.saved_dir / 'videos'
             imgs_dir = self.saved_dir / 'imgs'
             csv_path = self.saved_dir / 'results.csv'
@@ -57,9 +56,9 @@ class AcdcSISRBicubicPredictor(BasePredictor):
                 loss = (torch.stack(losses) * self.loss_weights).sum()
                 metrics = self._compute_metrics(output, target)
 
-                if self.export_prediction:
-                    path = self.test_dataloader.dataset.data_paths[index]
-                    filename = path.parts[-1].split('.')[0]
+                if self.exported:
+                    lr_path, hr_path = self.test_dataloader.dataset.data[index]
+                    filename = lr_path.parts[-1].split('.')[0]
                     patient, _, sid, fid = filename.split('_')
 
                     _losses = [loss.item() for loss in losses]
@@ -91,7 +90,7 @@ class AcdcSISRBicubicPredictor(BasePredictor):
             trange.set_postfix(**dict((key, f'{value / count: .3f}') for key, value in log.items()))
 
         # Save the results.
-        if self.export_prediction:
+        if self.exported:
             with open(csv_path, 'w', newline='') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerows(results)
@@ -133,8 +132,6 @@ class AcdcSISRBicubicPredictor(BasePredictor):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        output, target = output, target
-
         metrics = [metric_fn(output, target) for metric_fn in self.metric_fns]
         return metrics
 

@@ -11,7 +11,7 @@ from src.runner.predictors import AcdcSISRPredictor
 
 
 class AcdcSISRSRFBPredictor(AcdcSISRPredictor):
-    """The ACDC predictor for the Single-Image Super Resolution using the SRFBNet.
+    """The ACDC predictor for the Single-Image Super-Resolution using the SRFBNet.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -24,7 +24,7 @@ class AcdcSISRSRFBPredictor(AcdcSISRPredictor):
                       total=len(self.test_dataloader),
                       desc='testing')
 
-        if self.export_prediction:
+        if self.exported:
             videos_dir = self.saved_dir / 'videos'
             imgs_dir = self.saved_dir / 'imgs'
             csv_path = self.saved_dir / 'results.csv'
@@ -47,9 +47,9 @@ class AcdcSISRSRFBPredictor(AcdcSISRPredictor):
                 loss = (torch.stack(losses) * self.loss_weights).sum()
                 metrics = self._compute_metrics(outputs, target)
 
-                if self.export_prediction:
-                    path = self.test_dataloader.dataset.data_paths[index]
-                    filename = path.parts[-1].split('.')[0]
+                if self.exported:
+                    lr_path, hr_path = self.test_dataloader.dataset.data[index]
+                    filename = lr_path.parts[-1].split('.')[0]
                     patient, _, sid, fid = filename.split('_')
 
                     _losses = [loss.item() for loss in losses]
@@ -82,7 +82,7 @@ class AcdcSISRSRFBPredictor(AcdcSISRPredictor):
             trange.set_postfix(**dict((key, f'{value / count: .3f}') for key, value in log.items()))
 
         # Save the results.
-        if self.export_prediction:
+        if self.exported:
             with open(csv_path, 'w', newline='') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerows(results)
@@ -116,8 +116,6 @@ class AcdcSISRSRFBPredictor(AcdcSISRPredictor):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the denormalization to [0-255] before computing the metric.
         output, target = self._denormalize(outputs[-1]), self._denormalize(target)
-
         metrics = [metric_fn(output, target) for metric_fn in self.metric_fns]
         return metrics
