@@ -3,7 +3,7 @@ main:
     loaded_path: 'path/to/checkpoint.pth'
 
 dataset:
-    name: 'AcdcMISRDataset'
+    name: 'AcdcVSRDataset'
     kwargs:
         data_dir: 'path/to/data'
         downscale_factor: value
@@ -45,7 +45,7 @@ metrics:
     - name: 'MyMetric'
 
 predictor:
-    name: 'AcdcMISRPredictor'
+    name: 'AcdcVSRPredictor'
     kwargs:
         device: 'cuda:0'
         saved_dir: 'path/to/predicted/results'
