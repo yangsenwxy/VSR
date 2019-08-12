@@ -2,6 +2,7 @@ import logging
 import argparse
 import random
 import functools
+import cv2
 import numpy as np
 import nibabel as nib
 from numpy.fft import fftshift, ifftshift, fftn, ifftn
@@ -99,15 +100,13 @@ def _parse_args():
 
 
 class Downscale:
-    """Downscale the high-resolution images to the low-resolution images by using the Fourier Transform.
+    """Downscale the HR images to the LR images by using the Fourier Transform and the bicubic interpolation.
     Args:
         downscale_factor (int): The downscale factor.
     """
     def __init__(self, downscale_factor):
         self.downscale_factor = downscale_factor
         self._truncate_kspace = functools.partial(self._truncate_kspace, downscale_factor=downscale_factor)
-        self._transform_truncated_kspace_to_img = functools.partial(self._transform_truncated_kspace_to_img,
-                                                                    rescale_factor=downscale_factor)
 
     def __call__(self, *imgs):
         """
@@ -128,8 +127,10 @@ class Downscale:
             kspace = self._transform_img_to_kspace(img)
             truncated_kspace = self._truncate_kspace(kspace)
             img = self._transform_truncated_kspace_to_img(truncated_kspace)
-            if img.max() > 255.0:
-                img = ((img - img.min()) / (img.max() - img.min()) * 255.0).round()
+            h, w, c = img.shape
+            _h, _w = h // self.downscale_factor, w // self.downscale_factor
+            img = cv2.resize(img, (_w, _h), interpolation=cv2.INTER_CUBIC)[..., np.newaxis]
+            img = np.clip(img, 0, 255)
             _imgs.append(img)
         imgs = tuple(_imgs)
         return imgs
@@ -155,28 +156,26 @@ class Downscale:
         Returns:
             truncated_kspace (numpy.ndarray): The truncated frequency domain kspace data.
         """
+        rect_fn = np.zeros_like(kspace)
         kx_max = kspace.shape[0] // 2
         ky_max = kspace.shape[1] // 2
         lx = kspace.shape[0] // downscale_factor
         ly = kspace.shape[1] // downscale_factor
-        truncated_kspace = kspace[kx_max - lx // 2 : kx_max + (lx - (lx // 2)),
-                                  ky_max - ly // 2 : ky_max + (ly - (ly // 2))]
+        rect_fn[kx_max - lx // 2 : kx_max + (lx - (lx // 2)),
+                ky_max - ly // 2 : ky_max + (ly - (ly // 2))] = 1
+        truncated_kspace = rect_fn * kspace
         return truncated_kspace
 
     @staticmethod
-    def _transform_truncated_kspace_to_img(truncated_kspace, rescale_factor):
+    def _transform_truncated_kspace_to_img(truncated_kspace):
         """Transform the truncated frequency domain kspace data to the spatial domain image data.
         Args:
             truncated_kspace (numpy.ndarray): The truncated frequency domain kspace data.
-            rescale_factor (int): The rescale factor to adjust the magnitude of the image.
-                                  Assume that the original image has the size (h, w)
-                                  and the truncated kspace has the size (0.5h, 0.5w),
-                                  1 / sqrt(h * w) = (1 / sqrt(0.5h * 0.5w)) / 2
 
         Returns:
             img (numpy.ndarray): The spatial domain image data.
         """
-        img = fftshift(ifftn(ifftshift(truncated_kspace), norm='ortho')) / rescale_factor
+        img = fftshift(ifftn(ifftshift(truncated_kspace), norm='ortho'))
         img = np.around(np.abs(img))
         return img
 
