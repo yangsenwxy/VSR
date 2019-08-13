@@ -130,7 +130,7 @@ class Downscale:
             h, w, c = img.shape
             _h, _w = h // self.downscale_factor, w // self.downscale_factor
             img = cv2.resize(img, (_w, _h), interpolation=cv2.INTER_CUBIC)[..., np.newaxis]
-            img = np.clip(img, 0, 255)
+            img = np.clip(img.round(), 0, 255)
             _imgs.append(img)
         imgs = tuple(_imgs)
         return imgs
