@@ -13,13 +13,13 @@ class AcdcMISRDataset(BaseDataset):
     Args:
         downscale_factor (int): The downscale factor (2, 3, 4).
         transforms (list of Box): The preprocessing techniques applied to the data.
-        augments (list of Box): The augmentation techniques applied to the training data.
-        num_frames (int): The number of the frames of a sequence.
+        augments (list of Box): The augmentation techniques applied to the training data (default: None).
+        num_frames (int): The number of the frames of a sequence (default: 5).
         temporal_order (str): The order to form the sequence (default: 'middle').
             'last': The sequence would be {t-n+1, ..., t-1, t}.
             'middle': The sequence would be {t-(n-1)//2, ..., t-1, t, t+1, ..., t+[(n-1)-(n-1)//2]}.
     """
-    def __init__(self, downscale_factor, transforms, augments, num_frames, temporal_order='middle', **kwargs):
+    def __init__(self, downscale_factor, transforms, augments=None, num_frames=5, temporal_order='middle', **kwargs):
         super().__init__(**kwargs)
         if downscale_factor not in [2, 3, 4]:
             raise ValueError(f'The downscale factor should be 2, 3, 4. Got {downscale_factor}.')

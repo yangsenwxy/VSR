@@ -13,13 +13,6 @@ dataset:
                   means: [54.089]
                   stds: [48.084]
             - name: 'ToTensor'
-        augments:
-            - name: 'RandomHorizontalFlip'
-            - name: 'RandomVerticalFlip'
-            - name: 'RandomCropPatch'
-              kwargs:
-                  size: [32, 32]
-                  ratio: value
 
 dataloader:
     name: 'Dataloader'

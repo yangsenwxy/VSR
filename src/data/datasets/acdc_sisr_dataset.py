@@ -12,9 +12,9 @@ class AcdcSISRDataset(BaseDataset):
     Args:
         downscale_factor (int): The downscale factor (2, 3, 4).
         transforms (list of Box): The preprocessing techniques applied to the data.
-        augments (list of Box): The augmentation techniques applied to the training data.
+        augments (list of Box): The augmentation techniques applied to the training data (default: None).
     """
-    def __init__(self, downscale_factor, transforms, augments, **kwargs):
+    def __init__(self, downscale_factor, transforms, augments=None, **kwargs):
         super().__init__(**kwargs)
         if downscale_factor not in [2, 3, 4]:
             raise ValueError(f'The downscale factor should be 2, 3, 4. Got {downscale_factor}.')
