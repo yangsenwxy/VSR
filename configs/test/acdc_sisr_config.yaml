@@ -6,24 +6,13 @@ dataset:
     name: 'AcdcSISRDataset'
     kwargs:
         data_dir: 'path/to/data'
+        downscale_factor: value
         transforms:
-            - name: 'RandomElasticDeformation'
-              kwargs:
-                  prob: 0.75
-            - name: 'RandomCrop'
-              kwargs:
-                  size: [128, 128]
-        post_transforms:
             - name: 'Normalize'
               kwargs:
-                  means: [53.434]
-                  stds: [47.652]
+                  means: [54.089]
+                  stds: [48.084]
             - name: 'ToTensor'
-        degrade:
-            - name: 'Degrade'
-              kwargs:
-                  method: 'FFT'
-                  downscale_factor: 4
 
 dataloader:
     name: 'Dataloader'
@@ -52,4 +41,4 @@ predictor:
     kwargs:
         device: 'cuda:0'
         saved_dir: 'path/to/predicted/results'
-        export_prediction: true
+        exported: true
