@@ -1,7 +1,9 @@
 import torch
 from tqdm import tqdm
+import functools
 
 from src.runner.trainers.base_trainer import BaseTrainer
+from src.utils import denormalize
 
 
 class AcdcVSRTrainer(BaseTrainer):
@@ -9,6 +11,7 @@ class AcdcVSRTrainer(BaseTrainer):
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self._denormalize = functools.partial(denormalize, dataset='acdc')
 
     def _run_epoch(self, mode):
         """Run an epoch for training.
@@ -93,7 +96,6 @@ class AcdcVSRTrainer(BaseTrainer):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the denormalization before computing the metric.
         outputs = list(map(self._denormalize, outputs))
         targets = list(map(self._denormalize, targets))
 
@@ -119,18 +121,3 @@ class AcdcVSRTrainer(BaseTrainer):
             log[loss_fn.__class__.__name__] += loss.item() * batch_size * T
         for metric_fn, metric in zip(self.metric_fns, metrics):
             log[metric_fn.__class__.__name__] += metric.item() * batch_size * T
-
-    @staticmethod
-    def _denormalize(imgs, mean=53.434, std=47.652):
-        """Denormalize the images to [0-255].
-        Args:
-            imgs (torch.Tensor) (N, C, H, W): Te images to be denormalized.
-            mean (float): The mean of the training data.
-            std (float): The standard deviation of the training data.
-
-        Returns:
-            imgs (torch.Tensor) (N, C, H, W): The denormalized images.
-        """
-        imgs = imgs.clone()
-        imgs = (imgs * std + mean).clamp(0, 255) / 255
-        return imgs

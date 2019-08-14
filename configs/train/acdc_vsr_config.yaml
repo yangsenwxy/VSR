@@ -3,7 +3,7 @@ main:
     saved_dir: 'path/to/experimental/results'
     
 dataset:
-    name: 'AcdcSISRDataset'
+    name: 'AcdcVSRDataset'
     kwargs:
         data_dir: 'path/to/data'
         downscale_factor: value
@@ -20,6 +20,7 @@ dataset:
               kwargs:
                   size: [32, 32]
                   ratio: value
+        num_frames: value
 
 dataloader:
     name: 'Dataloader'
@@ -50,7 +51,7 @@ optimizer:
         weight_decay: 0
 
 logger:
-    name: 'AcdcSISRLogger'
+    name: 'AcdcVSRLogger'
     kwargs:
         dummy_input: [16, 1, 32, 32]
 
@@ -63,7 +64,7 @@ monitor:
         early_stop: 0
 
 trainer:
-    name: 'AcdcSISRTrainer'
+    name: 'AcdcVSRTrainer'
     kwargs:
         device: 'cuda:0'
         num_epochs: 1000

@@ -3,25 +3,30 @@ import torch
 import logging
 import imageio
 import numpy as np
+import functools
 from scipy.misc import imsave
 from tqdm import tqdm
 from pathlib import Path
 
 from src.runner.predictors.base_predictor import BasePredictor
+from src.utils import denormalize
 
 
 class AcdcVSRPredictor(BasePredictor):
     """The ACDC predictor for the Video Super-Resolution.
+    Args:
+        saved_dir (str): The directory to save the predicted videos, images and metrics (default: None).
+        exported (bool): Whether to export the predicted video, images and metrics (default: False).
     """
-    def __init__(self, saved_dir=None, export_prediction=False, **kwargs):
+    def __init__(self, saved_dir=None, exported=False, **kwargs):
         super().__init__(**kwargs)
-        if export_prediction:
-            if self.test_dataloader.batch_size != 1:
-                raise ValueError(f'The batch size should be 1 if export_prediction is True. Got {self.test_dataloader.batch_size}.')
-            #if self.test_dataloader.shuffle is True:
-            #    raise ValueError('The shuffle should be False if export_prediction is True.')
+        if self.test_dataloader.batch_size != 1:
+            raise ValueError(f'The testing batch size should be 1. Got {self.test_dataloader.batch_size}.')
+
+        if exported:
             self.saved_dir = Path(saved_dir)
-        self.export_prediction = export_prediction
+        self.exported = exported
+        self._denormalize = functools.partial(denormalize, dataset='acdc')
 
     def predict(self):
         """The testing process.
@@ -31,7 +36,7 @@ class AcdcVSRPredictor(BasePredictor):
                       total=len(self.test_dataloader),
                       desc='testing')
 
-        if self.export_prediction:
+        if self.exported:
             videos_dir = self.saved_dir / 'videos'
             imgs_dir = self.saved_dir / 'imgs'
             csv_path = self.saved_dir / 'results.csv'
@@ -55,9 +60,9 @@ class AcdcVSRPredictor(BasePredictor):
                 loss = (losses.mean(dim=0) * self.loss_weights).sum()
                 metrics = self._compute_metrics(outputs, targets)
 
-                if self.export_prediction:
-                    path = self.test_dataloader.dataset.data_paths[index]
-                    filename = path.parts[-1].split('.')[0]
+                if self.exported:
+                    lr_path, hr_path = self.test_dataloader.dataset.data[index]
+                    filename = lr_path.parts[-1].split('.')[0]
                     patient, _, sid = filename.split('_')
 
                     filename = filename.replace('2d+1d', '2d').replace('sequence', 'slice')
@@ -66,7 +71,7 @@ class AcdcVSRPredictor(BasePredictor):
                         _metrics = [metric.item() for metric in _metrics]
                         results.append([filename + f'_frame{t+1:0>2d}', *_metrics, *_losses])
 
-                    outputs = [(self._denormalize(output) * 255).round() for output in outputs]
+                    outputs = [self._denormalize(output) for output in outputs]
                     sr_imgs = [output.squeeze().detach().cpu().numpy().astype(np.uint8)
                                for output in outputs]
 
@@ -90,7 +95,7 @@ class AcdcVSRPredictor(BasePredictor):
             trange.set_postfix(**dict((key, f'{value / count: .3f}') for key, value in log.items()))
 
         # Save the results.
-        if self.export_prediction:
+        if self.exported:
             with open(csv_path, 'w', newline='') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerows(results)
@@ -135,7 +140,6 @@ class AcdcVSRPredictor(BasePredictor):
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
-        # Do the denormalization before computing the metric.
         outputs = list(map(self._denormalize, outputs))
         targets = list(map(self._denormalize, targets))
 
@@ -170,17 +174,3 @@ class AcdcVSRPredictor(BasePredictor):
         with imageio.get_writer(path) as writer:
             for img in imgs:
                 writer.append_data(img)
-
-    @staticmethod
-    def _denormalize(imgs, mean=53.434, std=47.652):
-        """Denormalize the images to [0-255].
-        Args:
-            imgs (torch.Tensor) (N, C, H, W): Te images to be denormalized.
-            mean (float): The mean of the training data.
-            std (float): The standard deviation of the training data.
-        Returns:
-            imgs (torch.Tensor) (N, C, H, W): The denormalized images.
-        """
-        imgs = imgs.clone()
-        imgs = (imgs * std + mean).clamp(0, 255) / 255
-        return imgs
