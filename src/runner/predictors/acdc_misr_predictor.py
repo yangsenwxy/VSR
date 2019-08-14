@@ -3,11 +3,13 @@ import torch
 import logging
 import imageio
 import numpy as np
+import functools
 from scipy.misc import imsave
 from tqdm import tqdm
 from pathlib import Path
 
 from src.runner.predictors.base_predictor import BasePredictor
+from src.utils import denormalize
 
 
 class AcdcMISRPredictor(BasePredictor):
@@ -24,6 +26,7 @@ class AcdcMISRPredictor(BasePredictor):
         if exported:
             self.saved_dir = Path(saved_dir)
         self.exported = exported
+        self._denormalize = functools.partial(denormalize, dataset='acdc')
         
     def predict(self):
         """The testing process.
@@ -75,7 +78,7 @@ class AcdcMISRPredictor(BasePredictor):
                         self._dump_video(output_dir / f'{tmp_sid}.gif', sr_imgs)
                         sr_imgs = []
 
-                    output = (self._denormalize(output) * 255).round()
+                    output = self._denormalize(output)
                     sr_img = output.squeeze().detach().cpu().numpy().astype(np.uint8)
                     sr_imgs.append(sr_img)
                     tmp_sid = sid
@@ -148,18 +151,3 @@ class AcdcMISRPredictor(BasePredictor):
         with imageio.get_writer(path) as writer:
             for img in imgs:
                 writer.append_data(img)
-
-    @staticmethod
-    def _denormalize(imgs, mean=54.089, std=48.084):
-        """Denormalize the images.
-        Args:
-            imgs (torch.Tensor) (N, C, H, W): Te images to be denormalized.
-            mean (float): The mean of the training data.
-            std (float): The standard deviation of the training data.
-
-        Returns:
-            imgs (torch.Tensor) (N, C, H, W): The denormalized images.
-        """
-        imgs = imgs.clone()
-        imgs = (imgs * std + mean).clamp(0, 255) / 255
-        return imgs
