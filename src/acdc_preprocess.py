@@ -67,9 +67,11 @@ def main(args):
                 downscale_fn = Downscale(downscale_factor)
 
                 # Save the processed images and videos.
+                lr_3dvideo = []
                 for s in range(data.shape[2]):
                     hr_video = data[h0:hn, w0:wn, s:s+1] # (H, W, C, T)
                     lr_video = np.stack(downscale_fn(*[hr_video[..., t] for t in range(hr_video.shape[-1])]), axis=-1) # (H, W, C, T)
+                    lr_3dvideo.append(lr_video)
                     if i == 0:
                         nib.save(nib.Nifti1Image(hr_video, np.eye(4)),
                                  str(hr_videos_dir / f'{patient_name}_2d+1d_sequence{s+1:0>2d}.nii.gz'))
@@ -83,7 +85,21 @@ def main(args):
                         lr_img = lr_video[..., t] # (H, W, C)
                         nib.save(nib.Nifti1Image(lr_img, np.eye(4)),
                                  str(lr_imgs_dir / f'{patient_name}_2d_slice{s+1:0>2d}_frame{t+1:0>2d}.nii.gz'))
-
+                if i == 0:
+                    hr_3dvideo = data[h0:hn, w0:wn, :, np.newaxis] # (H, W, D, C, T)
+                    nib.save(nib.Nifti1Image(hr_3dvideo, np.eye(4)),
+                             str(hr_videos_dir / f'{patient_name}_3d+1d.nii.gz'))
+                    for t in range(data.shape[-1]):
+                        hr_3dimg = hr_3dvideo[..., t] # (H, W, D, C)
+                        nib.save(nib.Nifti1Image(hr_3dimg, np.eye(4)),
+                                 str(hr_imgs_dir / f'{patient_name}_3d_frame{t+1:0>2d}.nii.gz'))
+                lr_3dvideo = np.stack(lr_3dvideo, axis=2) # (H, W, D, C, T)
+                nib.save(nib.Nifti1Image(lr_3dvideo, np.eye(4)),
+                         str(lr_videos_dir / f'{patient_name}_3d+1d.nii.gz'))
+                for t in range(data.shape[-1]):
+                    lr_3dimg = lr_3dvideo[..., t] # (H, W, D, C)
+                    nib.save(nib.Nifti1Image(lr_3dimg, np.eye(4)),
+                             str(lr_imgs_dir / f'{patient_name}_3d_frame{t+1:0>2d}.nii.gz'))
         # Calculate the mean and the standard deviation.
         mean = sum_ / num
         square_mean = square_sum / num
