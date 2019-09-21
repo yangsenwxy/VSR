@@ -407,7 +407,7 @@ class RandomCropPatch(BaseTransform):
             raise ValueError(f'The number of the LR images should be the same as the HR images')
 
         lr_imgs, hr_imgs = imgs[:len(imgs) // 2], imgs[len(imgs) // 2:]
-        if not all(j // i == self.ratio for lr_img, hr_img in zip(lr_imgs, hr_imgs) for i, j in zip(lr_img.shape[:-1], hr_img.shape[:-1])):
+        if not all(j // i == self.ratio for lr_img, hr_img in zip(lr_imgs, hr_imgs) for i, j in zip(lr_img.shape[:-2], hr_img.shape[:-2])):
             raise ValueError(f'The ratio between the HR images and the LR images should be {self.ratio}.')
 
         if ndim == 3:

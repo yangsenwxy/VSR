@@ -91,6 +91,6 @@ class AcdcVSRDataset(BaseDataset):
         if self.data_type == '2d':
             imgs = [img.permute(2, 0, 1).contiguous() for img in imgs]
         elif self.data_type == '3d':
-            imgs = [img.permute(3, 0, 1, 2).contiguous() for img in imgs]
+            imgs = [img.permute(3, 2, 0, 1).contiguous() for img in imgs]
         lr_imgs, hr_imgs = imgs[:len(imgs) // 2], imgs[len(imgs) // 2:]
         return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'index': index}
