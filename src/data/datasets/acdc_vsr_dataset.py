@@ -11,6 +11,7 @@ class AcdcVSRDataset(BaseDataset):
     Ref: https://www.creatis.insa-lyon.fr/Challenge/acdc/index.html
     
     Args:
+        data_type (str): The type of the data ('2d' or '3d').
         downscale_factor (int): The downscale factor (2, 3, 4).
         transforms (list of Box): The preprocessing techniques applied to the data.
         augments (list of Box): The augmentation techniques applied to the training data (default: None).
@@ -19,8 +20,12 @@ class AcdcVSRDataset(BaseDataset):
             'last': The sequence would be {t-n+1, ..., t-1, t}.
             'middle': The sequence would be {t-(n-1)//2, ..., t-1, t, t+1, ..., t+[(n-1)-(n-1)//2]}.
     """
-    def __init__(self, downscale_factor, transforms, augments=None, num_frames=5, temporal_order='last', **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, data_type, downscale_factor, transforms, augments=None, num_frames=5, temporal_order='last', **kwargs):
+        super().__init__(**kwargs)        
+        if data_type not in ['2d', '3d']:
+            raise ValueError(f"The downscale factor should be '2d' or '3d'. Got {data_type}.")
+        self.data_type = data_type
+        
         if downscale_factor not in [2, 3, 4]:
             raise ValueError(f'The downscale factor should be 2, 3, 4. Got {downscale_factor}.')
         self.downscale_factor = downscale_factor
@@ -35,8 +40,8 @@ class AcdcVSRDataset(BaseDataset):
 
         # Save the data paths and the target frame index for training; only need to save the data paths
         # for validation to process dynamic length of the sequences.
-        lr_paths = sorted((self.data_dir / self.type / 'LR' / f'X{downscale_factor}').glob('**/*2d+1d*.nii.gz'))
-        hr_paths = sorted((self.data_dir / self.type / 'HR').glob('**/*2d+1d*.nii.gz'))
+        lr_paths = sorted((self.data_dir / self.type / 'LR' / f'X{downscale_factor}').glob(f'**/*{data_type}+1d*.nii.gz'))
+        hr_paths = sorted((self.data_dir / self.type / 'HR').glob(f'**/*{data_type}+1d*.nii.gz'))
         if self.type == 'train':
             self.data = []
             for lr_path, hr_path in zip(lr_paths, hr_paths):
@@ -53,8 +58,8 @@ class AcdcVSRDataset(BaseDataset):
             lr_path, hr_path, t = self.data[index]
         else:
             lr_path, hr_path = self.data[index]
-        lr_imgs = nib.load(str(lr_path)).get_data() # (H, W, C, T)
-        hr_imgs = nib.load(str(hr_path)).get_data() # (H, W, C, T)
+        lr_imgs = nib.load(str(lr_path)).get_data() # (H, W, C, T) or (H, W, D, C, T)
+        hr_imgs = nib.load(str(hr_path)).get_data() # (H, W, C, T) or (H, W, D, C, T)
         
         if self.type == 'train':
             # Compute the start and the end index of the sequence according to the temporal order.
@@ -75,14 +80,17 @@ class AcdcVSRDataset(BaseDataset):
                 lr_imgs = lr_imgs[..., start:end]
                 hr_imgs = hr_imgs[..., start:end]
             imgs = [lr_imgs[..., t] for t in range(lr_imgs.shape[-1])] + \
-                   [hr_imgs[..., t] for t in range(hr_imgs.shape[-1])] # list of (H, W, C)
+                   [hr_imgs[..., t] for t in range(hr_imgs.shape[-1])] # list of (H, W, C) or (H, W, D, C)
         else:
             imgs = [lr_imgs[..., t] for t in range(lr_imgs.shape[-1])] + \
-                   [hr_imgs[..., t] for t in range(hr_imgs.shape[-1])] # list of (H, W, C)
+                   [hr_imgs[..., t] for t in range(hr_imgs.shape[-1])] # list of (H, W, C) or (H, W, D, C)
 
         if self.type == 'train':
             imgs = self.augments(*imgs)
         imgs = self.transforms(*imgs)
-        imgs = [img.permute(2, 0, 1).contiguous() for img in imgs]
+        if self.data_type == '2d':
+            imgs = [img.permute(2, 0, 1).contiguous() for img in imgs]
+        elif self.data_type == '3d':
+            imgs = [img.permute(3, 0, 1, 2).contiguous() for img in imgs]
         lr_imgs, hr_imgs = imgs[:len(imgs) // 2], imgs[len(imgs) // 2:]
         return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'index': index}

@@ -6,6 +6,7 @@ dataset:
     name: 'AcdcVSRDataset'
     kwargs:
         data_dir: 'path/to/data'
+        data_type: value
         downscale_factor: value
         transforms:
             - name: 'Normalize'
