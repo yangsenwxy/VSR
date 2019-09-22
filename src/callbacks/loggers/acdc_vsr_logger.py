@@ -1,3 +1,4 @@
+import random
 import torch
 from torchvision.utils import make_grid
 
@@ -19,12 +20,24 @@ class AcdcVSRLogger(BaseLogger):
             valid_batch (dict): The validation batch.
             valid_outputs (list of torch.Tensor): The validation outputs.
         """
-        train_hr_img = make_grid(train_batch['hr_imgs'][-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
-        train_sr_img = make_grid(train_outputs[-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
-        valid_hr_img = make_grid(valid_batch['hr_imgs'][-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
-        valid_sr_img = make_grid(valid_outputs[-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
+
+        if train_batch['hr_imgs'][-1].dim() == 5:
+            # 3D network
+            train_slice_id = random.randint(0, train_batch['hr_imgs'][-1].shape[2]-1)
+            train_hr_img = make_grid(train_batch['hr_imgs'][-1][:, :, train_slice_id], nrow=1, normalize=True, scale_each=True, pad_value=1)
+            train_sr_img = make_grid(train_outputs[-1][:, :, train_slice_id], nrow=1, normalize=True, scale_each=True, pad_value=1)
+
+            valid_slice_id = random.randint(0, valid_batch['hr_imgs'][-1].shape[2]-1)
+            valid_hr_img = make_grid(valid_batch['hr_imgs'][-1][:, :, valid_slice_id], nrow=1, normalize=True, scale_each=True, pad_value=1)
+            valid_sr_img = make_grid(valid_outputs[-1][:, :, valid_slice_id], nrow=1, normalize=True, scale_each=True, pad_value=1)
+        else:
+            # 2D network
+            train_hr_img = make_grid(train_batch['hr_imgs'][-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
+            train_sr_img = make_grid(train_outputs[-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
+            valid_hr_img = make_grid(valid_batch['hr_imgs'][-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
+            valid_sr_img = make_grid(valid_outputs[-1], nrow=1, normalize=True, scale_each=True, pad_value=1)
 
         train_grid = torch.cat([train_hr_img, train_sr_img], dim=-1)
         valid_grid = torch.cat([valid_hr_img, valid_sr_img], dim=-1)
-        self.writer.add_image('train', train_grid)
-        self.writer.add_image('valid', valid_grid)
+        self.writer.add_image('train', train_grid, epoch)
+        self.writer.add_image('valid', valid_grid, epoch)
