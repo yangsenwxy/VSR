@@ -208,3 +208,61 @@ class _ConvLSTM(nn.Module):
         if not isinstance(param, list):
             param = [param] * num_layers
         return param
+    
+
+class ConvBiLSTMNet(BaseNet):
+    """
+    Args:
+        in_channels (int): The input channels.
+        out_channels (int): The output channels.
+        num_features (list of int): The number of the internel feature maps.
+        upscale_factor (int): The upscale factor (2, 3, 4 or 8).
+    """
+    def __init__(self, in_channels, out_channels, num_features, upscale_factor, memory=True):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.num_features = num_features
+        self.upscale_factor = upscale_factor
+
+        if upscale_factor not in [2, 3, 4, 8]:
+            raise ValueError(f'The upscale factor should be 2, 3, 4 or 8. Got {upscale_factor}.')
+        
+        num_feature = num_features[0]
+        self.in_block = _InBlock(in_channels, num_feature) # The input block.
+        self.forward_lstm_block = _ConvLSTM(input_dim=num_feature,
+                                            hidden_dim=num_features,
+                                            kernel_size=(3, 3),
+                                            num_layers=len(num_features),
+                                            bias=True,
+                                            memory=memory)
+        self.backward_lstm_block = _ConvLSTM(input_dim=num_features[-1],
+                                             hidden_dim=num_features,
+                                             kernel_size=(3, 3),
+                                             num_layers=len(num_features),
+                                             bias=True,
+                                             memory=memory)
+        self.out_block = _OutBlock(num_features[-1]*2 + num_feature, out_channels, upscale_factor) # The output block.
+
+    def forward(self, inputs):
+        in_features, forward_features, backward_features, outputs = [], [], [], []
+        num_frames = len(inputs)
+        
+        for i in range(num_frames):
+            in_feature = self.in_block(inputs[i])
+            in_features.append(in_feature)
+            if i == 0:
+                self.forward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
+            forward_features.append(self.forward_lstm_block(in_features[i]))
+            
+        for i in range(num_frames):
+            if i == 0:
+                self.backward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
+            backward_features.append(self.backward_lstm_block(forward_features[num_frames-1-i]))
+        
+        for i in range(num_frames):
+            features = torch.cat([in_features[i], forward_features[i], backward_features[num_frames-1-i]], dim=1)
+            output = self.out_block(features)
+            outputs.append(output)
+        
+        return outputs
