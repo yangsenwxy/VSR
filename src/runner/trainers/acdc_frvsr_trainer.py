@@ -55,7 +55,8 @@ class AcdcFRVSRTrainer(BaseTrainer):
             self._update_log(log, batch_size, T, loss, losses, metrics)
             count += batch_size * T
             trange.set_postfix(**dict((key, f'{value / count: .3f}') for key, value in log.items()))
-
+        
+        outputs = outputs[0] # SR images
         for key in log:
             log[key] /= count
         return log, batch, outputs
