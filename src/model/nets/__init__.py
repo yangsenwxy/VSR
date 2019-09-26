@@ -8,6 +8,7 @@ from .drf_sisr_net import DRFSISRNet
 from .duf_net import DUFNet
 from .edvr_net import EDVRNet
 from .rbp_net import RBPNet
+from .toflow_net import TOFlowNet
 
 # VSR
 from .drf_net import DRFNet
