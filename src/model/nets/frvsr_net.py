@@ -9,20 +9,33 @@ from src.model.nets.base_net import BaseNet
 
 
 class FRVSRNet(BaseNet):
-    """The implementation of Frame-Recurrent Video Super-Resolution (ref: https://arxiv.org/pdf/1801.04590v4.pdf).
+    """The implementation of Frame-Recurrent Video Super-Resolution.
+    
+    ref:
+        https://arxiv.org/pdf/1801.04590v4.pdf
+        https://github.com/LoSealL/VideoSuperResolution
+    
     Args:
         in_channels (int): The input channels.
         out_channels (int): The output channels.
         upscale_factor (int): The upscale factor.
+        training (bool): The network for training or not. Default: True.
         num_resblocks (int): The number of the resblocks. Default: 10.
     """
-    def __init__(self, in_channels, out_channels, upscale_factor, num_resblocks=10):
+    def __init__(self, in_channels, out_channels, upscale_factor, is_prediction=False, num_resblocks=10):
         super(FRVSRNet, self).__init__()
         self.upscale_factor = upscale_factor
+        self.is_prediction = is_prediction
         self.srnet = SRNet(in_channels, out_channels, upscale_factor, num_resblocks)
         self.fnet = FNet(in_channels, 2)
         self.spatio_to_depth = SpaceToDepth(upscale_factor)
         self.warp = STN(mode='bilinear', padding_mode='border')
+        
+        # Xavier weights initialized
+        for m in self.modules():
+            classname = m.__class__.__name__
+            if classname.find('Conv') != -1:
+                nn.init.xavier_uniform_(m.weight)
         
     def forward(self, inputs):
         sr_imgs, lr_imgs = [], []
@@ -42,7 +55,11 @@ class FRVSRNet(BaseNet):
             lr_img = self.warp(lr_last, lr_flow[:, 0], lr_flow[:, 1])
             lr_imgs.append(lr_img)
             lr_last = input
-        return sr_imgs, lr_imgs
+        
+        if self.is_prediction == False:
+            return sr_imgs, lr_imgs
+        else:
+            return sr_imgs
 
 
 class SRNet(nn.Module):
