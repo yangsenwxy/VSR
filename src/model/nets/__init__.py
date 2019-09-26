@@ -7,6 +7,7 @@ from .drf_sisr_net import DRFSISRNet
 # MISR
 from .duf_net import DUFNet
 from .edvr_net import EDVRNet
+from .rbp_net import RBPNet
 
 # VSR
 from .drf_net import DRFNet
