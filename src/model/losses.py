@@ -32,3 +32,14 @@ class CharbonnierLoss(nn.Module):
     def forward(self, output, target):
         loss = torch.sqrt((output - target) ** 2 + self.epsilon)
         return torch.mean(loss)
+
+
+class FlowLoss(nn.MSELoss):
+    """The implementation of the flow loss in the frvsr network.
+    """
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, outputs, targets):
+        return super().forward(outputs, targets)
+

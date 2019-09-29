@@ -12,3 +12,4 @@ from .toflow_net import TOFlowNet
 
 # VSR
 from .drf_net import DRFNet
+from .frvsr_net import FRVSRNet
