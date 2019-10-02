@@ -10,3 +10,5 @@ from .duf_net import DUFNet
 # VSR
 from .drf_net import DRFNet
 from .convlstm3d_net import ConvLSTM3DNet
+from .convlstm_d2c_net import ConvLSTMD2CNet
+from .convlstm_d2s_net import ConvLSTMD2SNet

@@ -20,7 +20,7 @@ class AcdcVSRDataset(BaseDataset):
             'last': The sequence would be {t-n+1, ..., t-1, t}.
             'middle': The sequence would be {t-(n-1)//2, ..., t-1, t, t+1, ..., t+[(n-1)-(n-1)//2]}.
     """
-    def __init__(self, data_type, downscale_factor, transforms, augments=None, num_frames=5, temporal_order='last', **kwargs):
+    def __init__(self, data_type, downscale_factor, transforms, num_slices, augments=None, num_frames=5, temporal_order='last', **kwargs):
         super().__init__(**kwargs)        
         if data_type not in ['2d', '3d']:
             raise ValueError(f"The downscale factor should be '2d' or '3d'. Got {data_type}.")
@@ -33,6 +33,7 @@ class AcdcVSRDataset(BaseDataset):
         self.transforms = compose(transforms)
         self.augments = compose(augments)        
         self.num_frames = num_frames
+        self.num_slices = num_slices
         
         if temporal_order not in ['last', 'middle']:
             raise ValueError(f"The temporal order should be 'last' or 'middle'. Got {temporal_order}.")
@@ -46,7 +47,8 @@ class AcdcVSRDataset(BaseDataset):
             self.data = []
             for lr_path, hr_path in zip(lr_paths, hr_paths):
                 T = nib.load(str(lr_path)).header.get_data_shape()[-1]
-                self.data.extend([(lr_path, hr_path, t) for t in range(T)])
+                D = nib.load(str(lr_path)).header.get_data_shape()[2]
+                self.data.extend([(lr_path, hr_path, d, t) for t in range(T) for d in range(D)])
         else:
             self.data = [(lr_path, hr_path) for lr_path, hr_path in zip(lr_paths, hr_paths)]
 
@@ -55,7 +57,7 @@ class AcdcVSRDataset(BaseDataset):
 
     def __getitem__(self, index):
         if self.type == 'train':
-            lr_path, hr_path, t = self.data[index]
+            lr_path, hr_path, d, t = self.data[index]
         else:
             lr_path, hr_path = self.data[index]
         lr_imgs = nib.load(str(lr_path)).get_data() # (H, W, C, T) or (H, W, D, C, T)
@@ -79,12 +81,18 @@ class AcdcVSRDataset(BaseDataset):
             else:
                 lr_imgs = lr_imgs[..., start:end]
                 hr_imgs = hr_imgs[..., start:end]
+            
+            n = self.num_slices
+            D = lr_imgs.shape[2]
+            start = max(0, d - n // 2)
+            end = min(start+n+1, D)
+            lr_imgs, hr_imgs = lr_imgs[:, :, end-n:end, ...], hr_imgs[:, :, end-n:end, ...]
             imgs = [lr_imgs[..., t] for t in range(lr_imgs.shape[-1])] + \
                    [hr_imgs[..., t] for t in range(hr_imgs.shape[-1])] # list of (H, W, C) or (H, W, D, C)
         else:
             imgs = [lr_imgs[..., t] for t in range(lr_imgs.shape[-1])] + \
                    [hr_imgs[..., t] for t in range(hr_imgs.shape[-1])] # list of (H, W, C) or (H, W, D, C)
-
+        
         if self.type == 'train':
             imgs = self.augments(*imgs)
         imgs = self.transforms(*imgs)
