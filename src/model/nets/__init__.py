@@ -9,3 +9,4 @@ from .duf_net import DUFNet
 
 # VSR
 from .drf_net import DRFNet
+from .refine_net import RefineNet
