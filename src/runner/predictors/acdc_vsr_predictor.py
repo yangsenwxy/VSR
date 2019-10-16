@@ -55,16 +55,16 @@ class AcdcVSRPredictor(BasePredictor):
             inputs, targets, index = self._get_inputs_targets(batch)
             T = len(inputs)
             with torch.no_grad():
+                lr_path, hr_path = self.test_dataloader.dataset.data[index]
+                filename = lr_path.parts[-1].split('.')[0]
+                patient, _, sid = filename.split('_')
+                
                 outputs = self.net(inputs)
                 losses = self._compute_losses(outputs, targets)
                 loss = (losses.mean(dim=0) * self.loss_weights).sum()
-                metrics = self._compute_metrics(outputs, targets)
+                metrics = self._compute_metrics(outputs, targets, patient)
 
                 if self.exported:
-                    lr_path, hr_path = self.test_dataloader.dataset.data[index]
-                    filename = lr_path.parts[-1].split('.')[0]
-                    patient, _, sid = filename.split('_')
-
                     filename = filename.replace('2d+1d', '2d').replace('sequence', 'slice')
                     for t, _losses, _metrics in zip(range(T), losses, metrics):
                         _losses = [loss.item() for loss in _losses]
@@ -131,11 +131,12 @@ class AcdcVSRPredictor(BasePredictor):
         losses = torch.stack(losses, dim=1) # (T, #loss_fns)
         return losses
 
-    def _compute_metrics(self, outputs, targets):
+    def _compute_metrics(self, outputs, targets, name):
         """Compute the metrics.
         Args:
             outputs (list of torch.Tensor): The model outputs.
             targets (list of torch.Tensor): The data targets.
+            name (str): The patient name.
 
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
@@ -145,7 +146,10 @@ class AcdcVSRPredictor(BasePredictor):
 
         metrics = []
         for metric_fn in self.metric_fns:
-            metrics.append(torch.stack([metric_fn(output, target) for output, target in zip(outputs, targets)]))
+            if 'Cardiac' in metric_fn.__class__.__name__:
+                metrics.append(torch.stack([metric_fn(output, target, name) for output, target in zip(outputs, targets)]))
+            else:
+                metrics.append(torch.stack([metric_fn(output, target) for output, target in zip(outputs, targets)]))
         metrics = torch.stack(metrics, dim=1) # (T, #metric_fns)
         return metrics
 

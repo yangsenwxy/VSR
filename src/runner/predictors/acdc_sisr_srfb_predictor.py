@@ -42,16 +42,16 @@ class AcdcSISRSRFBPredictor(AcdcSISRPredictor):
             batch = self._allocate_data(batch)
             input, target, index = self._get_inputs_targets(batch)
             with torch.no_grad():
+                lr_path, hr_path = self.test_dataloader.dataset.data[index]
+                filename = lr_path.parts[-1].split('.')[0]
+                patient, _, sid, fid = filename.split('_')
+                
                 outputs = self.net(input)
                 losses = self._compute_losses(outputs, target)
                 loss = (torch.stack(losses) * self.loss_weights).sum()
-                metrics = self._compute_metrics(outputs, target)
+                metrics = self._compute_metrics(outputs, target, patient)
 
                 if self.exported:
-                    lr_path, hr_path = self.test_dataloader.dataset.data[index]
-                    filename = lr_path.parts[-1].split('.')[0]
-                    patient, _, sid, fid = filename.split('_')
-
                     _losses = [loss.item() for loss in losses]
                     _metrics = [metric.item() for metric in metrics]
                     results.append([filename, *_metrics, *_losses])
@@ -107,15 +107,21 @@ class AcdcSISRSRFBPredictor(AcdcSISRPredictor):
             losses.append(loss)
         return losses
 
-    def _compute_metrics(self, outputs, target):
+    def _compute_metrics(self, outputs, target, name):
         """Compute the metrics.
         Args:
             outputs (list of torch.Tensor): The model outputs.
             target (torch.Tensor): The data target.
+            name (str): The patient name.
 
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
         output, target = self._denormalize(outputs[-1]), self._denormalize(target)
-        metrics = [metric_fn(output, target) for metric_fn in self.metric_fns]
+        metrics = []
+        for metric_fn in self.metric_fns:
+            if 'Cardiac' in metric_fn.__class__.__name__:
+                metrics.append(metric_fn(output, target, name))
+            else:
+                metrics.append(metric_fn(output, target))
         return metrics
