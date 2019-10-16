@@ -18,16 +18,16 @@ def main(args):
         for path in paths:
             patient_name = path.parts[-1]
             logging.info(f'Process {patient_name}.')
-            
+
             # Read the MRI data.
             sequence_paths = sorted(list(path.glob('*/*.nii.gz')))
             for j, sequence_path in enumerate(sequence_paths):
                 data = nib.load(str(sequence_path)).get_data() # (H, W, 1, T)
-                
+
                 # If the data format is wrong, skip
-                if data.shape[2] != 1 or len(data.shape) != 4:
+                if data.shape[2] != 1 or len(data.shape) != 4 or data.shape[-1] < 30:
                     continue
-                
+
                 # If the data type is 'int16', remove the outlier and then apply the min-max normalization.
                 if data.dtype == 'int16':
                     hist, _ = np.histogram(data.ravel(), bins=range(int(data.max()) + 1), density=True)
