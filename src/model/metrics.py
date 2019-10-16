@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import pickle
 import numpy as np
 
 
@@ -110,3 +111,55 @@ class SSIM(nn.Module):
         else:
             reduced_dims = list(range(1, output.dim()))
             return ssim_map.mean(dim=reduced_dims)
+
+
+class CardiacPSNR(nn.Module):
+    """The cardiac PSNR score.
+    Args:
+        coordinates_path (str): The coordinates of the cardiac bounding box.
+    """
+    def __init__(self, coordinates_path, **kwargs):
+        super().__init__()
+        self.psnr = PSNR(**kwargs)
+        with open(coordinates_path, 'rb') as f:
+            self.coordinates = pickle.load(f)
+
+    def forward(self, output, target, name):
+        """
+        Args:
+            output (torch.tensor) (N, C, *): The model output.
+            target (torch.tensor) (N, C, *): The data target.
+            name (str): The patient name.
+
+        Returns:
+            score (torch.tensor) (0) or (N): The PSNR score.
+        """
+        h0, hn, w0, wn = self.coordinates[name]
+        output, target = output[..., h0:hn, w0:wn], target[..., h0:hn, w0:wn]
+        return self.psnr(output, target)
+
+
+class CardiacSSIM(nn.Module):
+    """The cardiac SSIM score.
+    Args:
+        coordinates_path (str): The coordinates of the cardiac bounding box.
+    """
+    def __init__(self, coordinates_path, **kwargs):
+        super().__init__()
+        self.ssim = SSIM(**kwargs)
+        with open(coordinates_path, 'rb') as f:
+            self.coordinates = pickle.load(f)
+
+    def forward(self, output, target, name):
+        """
+        Args:
+            output (torch.tensor) (N, C, *): The model output.
+            target (torch.tensor) (N, C, *): The data target.
+            name (str): The patient name.
+
+        Returns:
+            score (torch.tensor) (0) or (N): The PSNR score.
+        """
+        h0, hn, w0, wn = self.coordinates[name]
+        output, target = output[..., h0:hn, w0:wn], target[..., h0:hn, w0:wn]
+        return self.ssim(output, target)
