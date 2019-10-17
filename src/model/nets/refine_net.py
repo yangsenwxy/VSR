@@ -62,7 +62,7 @@ class RefineNet(BaseNet):
             
         # Second forward: with refine
         for i in range(num_frames):
-            in_feature = self.in_block(all_imgs[i])
+            in_feature = self.in_block(inputs[i])
             if i == 0:
                 self.lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
             refine_map = self.refine_block(hidden_features, (start+i) % num_all_frames, num_all_frames)
