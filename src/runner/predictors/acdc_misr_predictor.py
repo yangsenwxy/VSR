@@ -54,17 +54,17 @@ class AcdcMISRPredictor(BasePredictor):
             batch = self._allocate_data(batch)
             inputs, target, index = self._get_inputs_targets(batch)
             with torch.no_grad():
+                lr_path, hr_path, t = self.test_dataloader.dataset.data[index]
+                filename = lr_path.parts[-1].split('.')[0]
+                patient, _, sid = filename.split('_')
+                
                 output = self.net(inputs)
                 losses = self._compute_losses(output, target)
                 loss = (torch.stack(losses) * self.loss_weights).sum()
-                metrics = self._compute_metrics(output, target)
+                metrics = self._compute_metrics(output, target, patient)
 
                 if self.exported:
-                    lr_path, hr_path, t = self.test_dataloader.dataset.data[index]
-                    filename = lr_path.parts[-1].split('.')[0]
-                    patient, _, sid = filename.split('_')
                     fid = f'frame{t+1:0>2d}'
-
                     _losses = [loss.item() for loss in losses]
                     _metrics = [metric.item() for metric in metrics]
                     filename = filename.replace('2d+1d', '2d').replace('sequence', 'slice') + f'_{fid}'
@@ -129,17 +129,23 @@ class AcdcMISRPredictor(BasePredictor):
         losses = [loss_fn(output, target) for loss_fn in self.loss_fns]
         return losses
 
-    def _compute_metrics(self, output, target):
+    def _compute_metrics(self, output, target, name):
         """Compute the metrics.
         Args:
             output (torch.Tensor): The model output.
             target (torch.Tensor): The data target.
+            name (str): The patient name.
 
         Returns:
             metrics (list of torch.Tensor): The computed metrics.
         """
         output, target = self._denormalize(output), self._denormalize(target)
-        metrics = [metric_fn(output, target) for metric_fn in self.metric_fns]
+        metrics = []
+        for metric_fn in self.metric_fns:
+            if 'Cardiac' in metric_fn.__class__.__name__:
+                metrics.append(metric_fn(output, target, name))
+            else:
+                metrics.append(metric_fn(output, target))
         return metrics
     
     def _dump_video(self, path, imgs):
