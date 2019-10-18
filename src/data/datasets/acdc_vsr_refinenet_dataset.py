@@ -1,4 +1,5 @@
 import torch
+import pickle
 import numpy as np
 import nibabel as nib
 
@@ -20,7 +21,7 @@ class AcdcVSRRefineNetDataset(BaseDataset):
             'last': The sequence would be {t-n+1, ..., t-1, t}.
             'middle': The sequence would be {t-(n-1)//2, ..., t-1, t, t+1, ..., t+[(n-1)-(n-1)//2]}.
     """
-    def __init__(self, downscale_factor, transforms, augments=None, num_frames=5, temporal_order='last', **kwargs):
+    def __init__(self, downscale_factor, transforms, pos_code_path, augments=None, num_frames=5, temporal_order='last', **kwargs):
         super().__init__(**kwargs)
         if downscale_factor not in [2, 3, 4]:
             raise ValueError(f'The downscale factor should be 2, 3, 4. Got {downscale_factor}.')
@@ -29,6 +30,7 @@ class AcdcVSRRefineNetDataset(BaseDataset):
         self.transforms = compose(transforms)
         self.augments = compose(augments)        
         self.num_frames = num_frames
+        self.pos_code_path = pos_code_path
         
         if temporal_order not in ['last', 'middle']:
             raise ValueError(f"The temporal order should be 'last' or 'middle'. Got {temporal_order}.")
@@ -67,6 +69,14 @@ class AcdcVSRRefineNetDataset(BaseDataset):
         all_imgs = all_imgs[:len(all_imgs) // 2]
         start, num_all_frames = 0, len(all_imgs)
         
+        # Position encoding
+        with open(self.pos_code_path, 'rb') as f:
+            pos_codes = pickle.load(f)
+        filename = lr_path.parts[-1].split('.')[0]
+        patient, _, _ = filename.split('_')
+        pos_code = pos_codes[patient]
+        pos_code = self.transforms(pos_code, normalize_tags=[False])
+        
         if self.type == 'train':
             # Compute the start and the end index of the sequence according to the temporal order.
             n = self.num_frames
@@ -86,5 +96,9 @@ class AcdcVSRRefineNetDataset(BaseDataset):
             else:
                 lr_imgs = lr_imgs[start:end]
                 hr_imgs = hr_imgs[start:end]
+        
         all_imgs = all_imgs + [all_imgs[-1]] * (35-num_all_frames)
-        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'all_imgs': all_imgs, 'index': index, 'frame_start': start, 'num_all_frames': num_all_frames}
+        pos_code = pos_code.repeat(35 // num_all_frames + 2)[:35].unsqueeze(1)
+        
+        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'all_imgs': all_imgs, 'index': index, \
+                'frame_start': start, 'num_all_frames': num_all_frames, 'pos_code': pos_code}

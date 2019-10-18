@@ -52,10 +52,10 @@ class AcdcVSRRefineNetPredictor(BasePredictor):
         count = 0
         for batch in trange:
             batch = self._allocate_data(batch)
-            inputs, targets, all_imgs, fs, num_all_frames, index = self._get_inputs_targets(batch)
+            inputs, targets, all_imgs, fs, num_all_frames, index, sin_codes, cos_codes = self._get_inputs_targets(batch)
             T = len(inputs)
             with torch.no_grad():
-                _, outputs, _ = self.net(inputs, all_imgs, fs, num_all_frames)
+                _, _, outputs = self.net(inputs, all_imgs, fs, num_all_frames, sin_codes, cos_codes)
                 losses = self._compute_losses(outputs, targets)
                 loss = (losses.mean(dim=0) * self.loss_weights).sum()
                 metrics = self._compute_metrics(outputs, targets)
@@ -114,7 +114,8 @@ class AcdcVSRRefineNetPredictor(BasePredictor):
             targets (list of torch.Tensor): The data targets.
             index (int): The index of the target path in the `dataloder.data`.
         """
-        return batch['lr_imgs'], batch['hr_imgs'], batch['all_imgs'], batch['frame_start'], batch['num_all_frames'], batch['index']
+        return batch['lr_imgs'], batch['hr_imgs'], batch['all_imgs'], batch['frame_start'], batch['num_all_frames'], batch['index'], \
+               batch['sin_code'], batch['cos_code']
 
     def _compute_losses(self, outputs, targets):
         """Compute the losses.

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import math
+import numpy as np
 
 from src.model.nets.base_net import BaseNet
 
@@ -22,7 +23,7 @@ class RefineNet(BaseNet):
         self.refine_window_size = refine_window_size
         self.upscale_factor = upscale_factor
         self.update_memory = update_memory
-
+        
         if upscale_factor not in [2, 3, 4, 8]:
             raise ValueError(f'The upscale factor should be 2, 3, 4 or 8. Got {upscale_factor}.')
         
@@ -43,11 +44,11 @@ class RefineNet(BaseNet):
         self.refine_block = _RefineBlock(refine_window_size * num_features[-1] * 2,
                                          num_features[-1],
                                          refine_window_size)
-        self.project_block = nn.Conv2d(num_features[-1], num_feature, kernel_size=1)
         self.out_block = _OutBlock(num_feature, out_channels, upscale_factor)
         
-    def forward(self, inputs, all_imgs, start, num_all_frames):
-        in_features, forward_features, backward_features, outputs1, outputs2, outputs3 = [], [], [], [], [], []
+    def forward(self, inputs, all_imgs, start, num_all_frames, pos_codes):
+        in_features, all_in_features, refined_features, forward_features, backward_features = [], [], [], [], []
+        outputs = []
         num_frames = len(inputs)
         
         with torch.no_grad():
@@ -63,10 +64,10 @@ class RefineNet(BaseNet):
                     backward_feature = self.backward_lstm_block(in_feature)
             for img in (all_imgs):
                 in_feature = self.in_block(img)
+                all_in_features.append(in_feature)
                 forward_feature = self.forward_lstm_block(in_feature)
                 forward_features.append(forward_feature)
-            for img in reversed(all_imgs):
-                in_feature = self.in_block(img)
+            for in_feature in reversed(all_in_features):
                 backward_feature = self.backward_lstm_block(in_feature)
                 backward_features.insert(0, backward_feature)
         
@@ -74,6 +75,7 @@ class RefineNet(BaseNet):
         self.forward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
         self.backward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
         # Forward
+        _outputs = []
         if self.update_memory:
             with torch.no_grad():
                 for input in inputs[-6:]:
@@ -81,33 +83,90 @@ class RefineNet(BaseNet):
                     feature = self.forward_lstm_block(in_feature)
         for input in inputs:
             in_feature = self.in_block(input)
+            in_features.append(in_feature)
             feature = self.forward_lstm_block(in_feature)
-            feature = self.project_block(feature)
             output = self.out_block(feature+in_feature)
-            outputs1.append(output)
+            _outputs.append(output)
+        outputs.append(_outputs)
         # Backward
+        _outputs = []
+        if self.update_memory:
+            with torch.no_grad():
+                for input in reversed(inputs):
+                    in_feature = self.in_block(input)
+                    feature = self.backward_lstm_block(in_feature)
+        for in_feature in reversed(in_features):
+            feature = self.backward_lstm_block(in_feature)
+            output = self.out_block(feature+in_feature)
+            _outputs.insert(0, output)
+        outputs.append(_outputs)
+        
+        # Second: with refinement
+        _outputs = []
+        for i in range(num_frames):
+            in_feature = in_features[i]
+            refine_map = self.refine_block(forward_features, backward_features, pos_codes, \
+                                           (start+i) % num_all_frames, num_all_frames)
+            output = self.out_block(refine_map+in_feature)
+            refined_features.append(refine_map+in_feature)
+            _outputs.append(output)
+        outputs.append(_outputs)
+        
+        refined_forward_features, refined_backward_features = [], []
+        with torch.no_grad():
+            in_feature = self.in_block(all_imgs[0])
+            self.forward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
+            self.backward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
+            for i, in_feature in enumerate(all_in_features):
+                refine_map = self.refine_block(forward_features, backward_features, pos_codes,
+                                               (torch.zeros_like(num_all_frames)+i) % num_all_frames, num_all_frames)
+                forward_feature = self.forward_lstm_block(in_feature+refine_map)
+                refined_forward_features.append(forward_feature)
+            for i, in_feature in enumerate(reversed(all_in_features)):
+                refine_map = self.refine_block(forward_features, backward_features, pos_codes,
+                                               (torch.zeros_like(num_all_frames)+num_all_frames-i-1) % num_all_frames, num_all_frames)
+                backward_feature = self.backward_lstm_block(in_feature+refine_map)
+                refined_backward_features.insert(0, backward_feature)
+            
+        # Third: without refinement
+        self.forward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
+        self.backward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
+        # Forward
+        _outputs = []
+        if self.update_memory:
+            with torch.no_grad():
+                for input in inputs[-6:]:
+                    in_feature = self.in_block(input)
+                    feature = self.forward_lstm_block(in_feature)
+        for in_feature in refined_features:
+            feature = self.forward_lstm_block(in_feature)
+            output = self.out_block(feature+in_feature)
+            _outputs.append(output)
+        outputs.append(_outputs)
+        # Backward
+        _outputs = []
         if self.update_memory:
             with torch.no_grad():
                 for input in reversed(inputs[:6]):
                     in_feature = self.in_block(input)
                     feature = self.backward_lstm_block(in_feature)
-        for input in reversed(inputs):
-            in_feature = self.in_block(input)
+        for in_feature in reversed(refined_features):
             feature = self.backward_lstm_block(in_feature)
-            feature = self.project_block(feature)
             output = self.out_block(feature+in_feature)
-            outputs2.insert(0, output)
-            
-        # Second: with refinement
+            _outputs.insert(0, output)
+        outputs.append(_outputs)
+        
+        # Forth: with refinement
+        _outputs = []
         for i in range(num_frames):
-            in_feature = self.in_block(inputs[i])
-            refine_map = self.refine_block(forward_features, backward_features,
+            in_feature = refined_features[i]
+            refine_map = self.refine_block(refined_forward_features, refined_backward_features, pos_codes, 
                                            (start+i) % num_all_frames, num_all_frames)
-            refine_map = self.project_block(refine_map)
             output = self.out_block(refine_map+in_feature)
-            outputs3.append(output)
-            
-        return outputs1, outputs2, outputs3
+            _outputs.append(output)
+        outputs.append(_outputs)
+        
+        return tuple(outputs)
     
     
 class _RefineBlock(nn.Module):
@@ -123,7 +182,8 @@ class _RefineBlock(nn.Module):
         self.body.add_module('conv2', nn.Conv2d(num_feature, num_feature, kernel_size=3, padding=1))
         self.body.add_module('prelu2', nn.ReLU(True))
         
-    def forward(self, forward_features, backward_features, t, num_all_frames):
+        
+    def forward(self, forward_features, backward_features, pos_codes, t, num_all_frames):
         """
         Args:
             forward_features (list of FloatTensor): the forward hidden features of all frames
@@ -140,22 +200,66 @@ class _RefineBlock(nn.Module):
                 end[b] %= num_all_frames[b]
                 forward_feature = forward_features[start[b]:num_all_frames[b]] + forward_features[:end[b]]
                 backward_feature = backward_features[start[b]:num_all_frames[b]] + backward_features[:end[b]]
+                pos_code = torch.cat((pos_codes[b, start[b]:num_all_frames[b]], pos_codes[b, :end[b]]), dim=0)
             elif start[b] < 0:
                 forward_feature = forward_features[start[b]:] + forward_features[:end[b]]
                 backward_feature = backward_features[start[b]:] + backward_features[:end[b]]
+                pos_code = torch.cat((pos_codes[b, start[b]:], pos_codes[b, :end[b]]), dim=0)
             else:
                 forward_feature = forward_features[start[b]:end[b]]
                 backward_feature = backward_features[start[b]:end[b]]
-            inputs[b] = torch.cat([feature[b] for feature in forward_feature+backward_feature], dim=0)
+                pos_code = pos_codes[b, start[b]:end[b]]
+            
+            pos_code = torch.repeat_interleave(pos_code, (h*w), dim=1).view(self.num_frames, 1, h, w)
+            forward_feature = torch.stack([feature[b] for feature in forward_feature], dim=0) + pos_code
+            backward_feature = torch.stack([feature[b] for feature in backward_feature], dim=0) + pos_code
+            inputs[b] = torch.cat((forward_feature, backward_feature), dim=1).view(-1, h, w).contiguous()
+        
         return self.body(inputs)
+        
+        
+class PositionalEncoding(nn.Module):
+    """Positional encoding.
+    ref:
+       
+    Args:
+        dim (int): The model's dimension.
+        max_frame_len (int): The maximum sequence length.
+    """
+    def __init__(self, dim, max_frame_len):
+        super(PositionalEncoding, self).__init__()
+
+        # j//2 because we have sin and cos tow channels
+        position_encoding = np.array([
+            [pos / np.power(10000, 2.0 * (j // 2) / dim) for j in range(dim)] for pos in range(max_frame_len)])
+        position_encoding[:, 0::2] = np.sin(position_encoding[:, 0::2])
+        position_encoding[:, 1::2] = np.cos(position_encoding[:, 1::2])
+        position_encoding = torch.from_numpy(position_encoding).float()
+        pad_row = torch.zeros([1, dim])
+        position_encoding = torch.cat((pad_row, position_encoding), dim=0)
+        
+        self.position_encoding = nn.Embedding(max_frame_len + 1, dim)
+        self.position_encoding.weight = nn.Parameter(position_encoding, requires_grad=False)
+
+    def forward(self, input_lens):
+        """
+        Args:
+            input_len (Tensor) (B, 1): Each element's value in ths tensor is the length of a sequence from a mini batch.
+        """
+        max_len = torch.max(input_lens)
+        tensor = torch.cuda.LongTensor if input_lens.is_cuda else torch.LongTensor
+        
+        # Start from 1 because 0 is for PAD
+        input_pos = tensor([list(range(1, input_len + 1)) + [0] * (max_len - input_len).item() for input_len in input_lens])
+        return self.position_encoding(input_pos)
         
 
 class _InBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.add_module('conv1', nn.Conv2d(in_channels, 4 * out_channels, kernel_size=3, padding=1))
+        self.add_module('conv1', nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))
         self.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
-        self.add_module('conv2', nn.Conv2d(4 * out_channels, out_channels, kernel_size=1))
+        self.add_module('conv2', nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1))
         self.add_module('prelu2', nn.PReLU(num_parameters=1, init=0.2))
 
 
@@ -171,15 +275,6 @@ class _OutBlock(nn.Sequential):
             self.add_module('conv1', nn.Conv2d(in_channels, 9 * in_channels, kernel_size=3, padding=1))
             self.add_module('pixelshuffle1', nn.PixelShuffle(3))
             self.add_module('conv2', nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))
-
-
-class _AttentionBlock(nn.Sequential):
-    def __init__(self, in_channels, num_features, out_channels):
-        super().__init__()
-        self.add_module('conv1', nn.Conv3d(in_channels, num_features, kernel_size=3, padding=1))
-        self.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
-        self.add_module('conv2', nn.Conv3d(num_features, out_channels, kernel_size=3, padding=1))
-        self.add_module('prelu2', nn.PReLU(num_parameters=1, init=0.2))
     
     
 class ConvLSTMCell(nn.Module):
