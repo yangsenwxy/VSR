@@ -55,11 +55,12 @@ class AcdcVSRDataset(BaseDataset):
             lr_path, hr_path = self.data[index]
         lr_imgs = nib.load(str(lr_path)).get_data() # (H, W, C, T)
         hr_imgs = nib.load(str(hr_path)).get_data() # (H, W, C, T)
+        T = lr_imgs.shape[-1]
+        pos_code = np.cos(np.linspace(0, 2 * np.pi, num=T, endpoint=False))
         
         if self.type == 'train':
             # Compute the start and the end index of the sequence according to the temporal order.
             n = self.num_frames
-            T = lr_imgs.shape[-1]
             if self.temporal_order == 'last':
                 start, end = t - n + 1, t + 1
             elif self.temporal_order == 'middle':
@@ -67,13 +68,16 @@ class AcdcVSRDataset(BaseDataset):
             if start < 0:
                 lr_imgs = np.concatenate((lr_imgs[..., start:], lr_imgs[..., :end]), axis=-1)
                 hr_imgs = np.concatenate((hr_imgs[..., start:], hr_imgs[..., :end]), axis=-1)
+                pos_code = np.concatenate((pos_code[start:], pos_code[:end]), axis=-1)
             elif end > T:
                 end %= T
                 lr_imgs = np.concatenate((lr_imgs[..., start:], lr_imgs[..., :end]), axis=-1)
                 hr_imgs = np.concatenate((hr_imgs[..., start:], hr_imgs[..., :end]), axis=-1)
+                pos_code = np.concatenate((pos_code[start:], pos_code[:end]), axis=-1)
             else:
                 lr_imgs = lr_imgs[..., start:end]
                 hr_imgs = hr_imgs[..., start:end]
+                pos_code = pos_code[start:end]
             imgs = [lr_imgs[..., t] for t in range(lr_imgs.shape[-1])] + \
                    [hr_imgs[..., t] for t in range(hr_imgs.shape[-1])] # list of (H, W, C)
         else:
@@ -85,4 +89,5 @@ class AcdcVSRDataset(BaseDataset):
         imgs = self.transforms(*imgs)
         imgs = [img.permute(2, 0, 1).contiguous() for img in imgs]
         lr_imgs, hr_imgs = imgs[:len(imgs) // 2], imgs[len(imgs) // 2:]
-        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'index': index}
+        pos_code = self.transforms(pos_code, normalize_tags=[False])
+        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'pos_code': pos_code, 'index': index}

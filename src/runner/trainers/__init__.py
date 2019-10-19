@@ -3,6 +3,7 @@ from .acdc_sisr_srfb_trainer import AcdcSISRSRFBTrainer
 from .acdc_misr_trainer import AcdcMISRTrainer
 from .acdc_vsr_trainer import AcdcVSRTrainer
 from .acdc_frvsr_trainer import AcdcFRVSRTrainer
+from .acdc_vsr_refine_trainer import AcdcVSRRefineTrainer
 
 from .dsb15_sisr_trainer import Dsb15SISRTrainer
 from .dsb15_sisr_srfb_trainer import Dsb15SISRSRFBTrainer

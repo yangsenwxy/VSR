@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import math
+import copy
 
 from src.model.nets.base_net import BaseNet
 
@@ -14,43 +15,61 @@ class ConvLSTMNet(BaseNet):
         bidirectional (bool):
         upscale_factor (int): The upscale factor (2, 3, 4 or 8).
     """
-    def __init__(self, in_channels, out_channels, num_features, bidirectional, upscale_factor):
+    def __init__(self, in_channels, out_channels, num_features, num_stages, upscale_factor,
+                 bidirectional=False, memory=True, updated_memory=False, positional_encoding=False):
         super().__init__()
+        assert num_features[0] == num_features[-1]
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_features = num_features
+        self.num_stages = num_stages
+        self.bidirectional = bidirectional
         self.upscale_factor = upscale_factor
+        self.memory = memory
+        self.updated_memory = updated_memory
 
         if upscale_factor not in [2, 3, 4, 8]:
             raise ValueError(f'The upscale factor should be 2, 3, 4 or 8. Got {upscale_factor}.')
 
-        num_feature = num_features[0]
-        self.in_block = _InBlock(in_channels, num_feature)
-        self.convlstm_block = _ConvLSTM(input_size=num_feature,
+        self.in_block = _InBlock(in_channels, num_features[0])
+        self.convlstm_block = _ConvLSTM(input_size=num_features[0],
                                         hidden_sizes=num_features,
                                         kernel_size=3,
                                         num_layers=len(num_features),
-                                        bidirectional=bidirectional)
-        self.conv = nn.Conv2d(num_features[-1] * 2 if bidirectional else num_features[-1],
-                              num_feature, kernel_size=1)
-        self.out_block = _OutBlock(num_feature, out_channels, upscale_factor)
+                                        bidirectional=bidirectional,
+                                        memory=memory)
+        self.out_block = _OutBlock(num_features[0], out_channels, upscale_factor)
+        self.positional_encoding = _PositionalEncoding() if positional_encoding else None
 
-    def forward(self, inputs):
+    def forward(self, inputs, pos_code, forward_input=None, backward_input=None):
+        if self.updated_memory:
+            if not self.bidirectional:
+                backward_input = None
+            with torch.no_grad():
+                states = self.update_memory(forward_input, backward_input)
+        else:
+            states = None
+
+        outputs = []
         in_features = torch.stack([self.in_block(input) for input in inputs], dim=0)
-        convlstm_features = self.convlstm_block(in_features)
-        convlstm_features = [self.conv(convlstm_feature) for convlstm_feature in convlstm_features]
-        outputs = [self.out_block(in_feature + convlstm_feature)
-                   for in_feature, convlstm_feature in zip(in_features, convlstm_features)]
+        for i in range(self.num_stages):
+            if self.positional_encoding:
+                encoded_features = self.positional_encoding(in_features, pos_code)
+                convlstm_features = self.convlstm_block(encoded_features, states)
+            else:
+                convlstm_features = self.convlstm_block(in_features, states)
+            features = [in_feature + convlstm_feature
+                        for in_feature, convlstm_feature in zip(in_features, convlstm_features)]
+            outputs.append([self.out_block(feature) for feature in features])
+            in_features = torch.stack(features, dim=0)
         return outputs
 
 
 class _InBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.add_module('conv1', nn.Conv2d(in_channels, 4 * out_channels, kernel_size=3, padding=1))
-        self.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
-        self.add_module('conv2', nn.Conv2d(4 * out_channels, out_channels, kernel_size=1))
-        self.add_module('prelu2', nn.PReLU(num_parameters=1, init=0.2))
+        self.add_module('conv', nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))
+        self.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
 
 
 class _OutBlock(nn.Sequential):
@@ -68,76 +87,112 @@ class _OutBlock(nn.Sequential):
 
 
 class _ConvLSTM(nn.Module):
-    def __init__(self, input_size, hidden_sizes, kernel_size, num_layers,
-                 bias=True, batch_first=False, bidirectional=False):
+    def __init__(self, input_size, hidden_sizes, kernel_size, num_layers, bidirectional=False, memory=True):
         super().__init__()
-        assert batch_first is False
-
         self.input_size = input_size
         self.hidden_sizes = hidden_sizes
         self.kernel_size = kernel_size
         self.num_layers = num_layers
-        self.batch_first = batch_first
         self.bidirectional = bidirectional
-        self.num_directions = 2 if bidirectional else 1
+        self.memory = memory
 
-        self.cell_list = nn.ModuleList([nn.ModuleList() for _ in range(self.num_directions)])
-        for i in range(self.num_directions):
-            for layer in range(num_layers):
-                if layer == 0:
-                    in_channels = input_size + hidden_sizes[layer]
-                else:
-                    in_channels = hidden_sizes[layer - 1] * self.num_directions + hidden_sizes[layer]
-                self.cell_list[i].append(_ConvLSTMCell(in_channels=in_channels,
-                                                       hidden_size=hidden_sizes[layer],
-                                                       kernel_size=kernel_size,
-                                                       bias=bias))
+        self.forward_cells = nn.ModuleList()
+        for layer in range(num_layers):
+            if layer == 0:
+                in_channels = input_size + hidden_sizes[layer]
+            else:
+                in_channels = hidden_sizes[layer - 1] + hidden_sizes[layer]
+            self.forward_cells.append(_ConvLSTMCell(in_channels=in_channels,
+                                                    hidden_size=hidden_sizes[layer],
+                                                    kernel_size=kernel_size))
+        if bidirectional:
+            self.backward_cells = copy.deepcopy(self.forward_cells)
+            self.fuser = _Fuser(in_channels=hidden_sizes[-1] * 2, out_channels=hidden_sizes[-1])
 
-    def forward(self, input, hidden_states=None):
-        if hidden_states is None:
-            hidden_states = self._init_hidden_states(input)
+    def forward(self, input, states=None):
+        if states is None:
+            forward_states, backward_states = self._init_states(input)
+        else:
+            forward_states, backward_states = states
 
-        seq_len = input.size(0)
-        cur_layer_input = input
+        T = input.size(0)
+        _input = input
         for layer in range(self.num_layers):
-            h_t, c_t = hidden_states[0][layer]
-            output_inner = []
-            for t in range(seq_len):
-                h_t, c_t = self.cell_list[0][layer](cur_layer_input[t], h_t, c_t)
-                output_inner.append(h_t)
+            h_t, c_t = forward_states[layer]
+            hidden_states = []
+            for t in range(T):
+                if not self.memory:
+                    h_t, c_t = forward_states[layer]
+                h_t, c_t = self.forward_cells[layer](_input[t], h_t, c_t)
+                hidden_states.append(h_t)
+            _input = torch.stack(hidden_states, dim=0)
+        forward_hidden_states = _input
 
-            if self.bidirectional:
-                h_t, c_t = hidden_states[1][layer]
-                reversed_output_inner = []
-                for t in reversed(range(seq_len)):
-                    h_t, c_t = self.cell_list[1][layer](cur_layer_input[t], h_t, c_t)
-                    reversed_output_inner.insert(0, h_t)
-                output_inner = [torch.cat([h, rh], dim=1) for h, rh in zip(output_inner, reversed_output_inner)]
+        if self.bidirectional:
+            _input = input
+            for layer in range(self.num_layers):
+                h_t, c_t = backward_states[layer]
+                hidden_states = []
+                for t in reversed(range(T)):
+                    if not self.memory:
+                        h_t, c_t = backward_states[layer]
+                    h_t, c_t = self.backward_cells[layer](_input[t], h_t, c_t)
+                    hidden_states.insert(0, h_t)
+                _input = torch.stack(hidden_states, dim=0)
+            backward_hidden_states = _input
+            fused_hidden_states = self.fuser(forward_hidden_states, backward_hidden_states)
+            return fused_hidden_states
+        else:
+            return forward_hidden_states
 
-            layer_output = torch.stack(output_inner, dim=0)
-            cur_layer_input = layer_output
-        return layer_output
+    def update_memory(self, forward_input, backward_input=None):
+        forward_states, backward_states = self._init_states(forward_input)
 
-    def _init_hidden_states(self, input):
+        T = forward_input.size(0)
+        for layer in range(self.num_layers):
+            h_t, c_t = forward_states[layer]
+            hidden_states = []
+            for t in range(T):
+                h_t, c_t = self.forward_cells[layer](forward_input[t], h_t, c_t)
+                hidden_states.append(h_t)
+            forward_states[layer] = (h_t, c_t)
+            forward_input = torch.stack(hidden_states, dim=0)
+
+        if backward_input:
+            for layer in range(self.num_layers):
+                h_t, c_t = backward_states[layer]
+                hidden_states = []
+                for t in reversed(range(T)):
+                    h_t, c_t = self.backward_cells[layer](backward_input[t], h_t, c_t)
+                    hidden_states.insert(0, h_t)
+                backward_states[layer] = (h_t, c_t)
+                backward_input = torch.stack(hidden_states, dim=0)
+            return forward_states, backward_states
+        else:
+            return forward_states, None
+
+    def _init_states(self, input):
         _, B, _, H, W = input.size()
-        _states = []
+        states = []
         for layer in range(self.num_layers):
-            C = self.cell_list[0][layer].hidden_size
+            C = self.forward_cells[layer].hidden_size
             zeros = torch.zeros(B, C, H, W, dtype=input.dtype, device=input.device)
-            _states.append((zeros, zeros))
-        states = [_states for _ in range(self.num_directions)]
-        return states
+            states.append((zeros, zeros))
+        if self.bidirectional:
+            return states, states
+        else:
+            return states, None
+
 
 class _ConvLSTMCell(nn.Module):
-    def __init__(self, in_channels, hidden_size, kernel_size, bias=True):
+    def __init__(self, in_channels, hidden_size, kernel_size):
         super().__init__()
         self.in_channels = in_channels
         self.hidden_size = hidden_size
         self.conv = nn.Conv2d(in_channels=in_channels,
                               out_channels=4 * hidden_size,
                               kernel_size=kernel_size,
-                              padding=kernel_size // 2,
-                              bias=bias)
+                              padding=kernel_size // 2)
 
     def forward(self, input, h_0, c_0):
         features = self.conv(torch.cat([input, h_0], dim=1))
@@ -149,3 +204,28 @@ class _ConvLSTMCell(nn.Module):
         c_1 = f * c_0 + i * g
         h_1 = o * torch.tanh(c_1)
         return h_1, c_1
+
+
+class _Fuser(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.bidirectional_fuser = nn.Conv2d(in_channels=in_channels,
+                                             out_channels=out_channels,
+                                             kernel_size=1)
+
+    def forward(self, forward_hidden_states, backward_hidden_states):
+        fused_hidden_states = torch.stack([self.bidirectional_fuser(torch.cat([fh_t, bh_t], dim=1))
+                                           for fh_t, bh_t in zip(forward_hidden_states, backward_hidden_states)], dim=0)
+        return fused_hidden_states
+
+
+class _PositionalEncoding(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input, pos_code):
+        _, _, C, H, W = input.size()
+        pos_code = pos_code.repeat(C, H, W, 1, 1).permute(4, 3, 0, 1, 2).contiguous()
+        return input + pos_code

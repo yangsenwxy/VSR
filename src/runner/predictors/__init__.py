@@ -2,6 +2,7 @@ from .acdc_sisr_predictor import AcdcSISRPredictor
 from .acdc_sisr_srfb_predictor import AcdcSISRSRFBPredictor
 from .acdc_misr_predictor import AcdcMISRPredictor
 from .acdc_vsr_predictor import AcdcVSRPredictor
+from .acdc_vsr_refine_predictor import AcdcVSRRefinePredictor
 
 from .dsb15_sisr_predictor import Dsb15SISRPredictor
 from .dsb15_sisr_srfb_predictor import Dsb15SISRSRFBPredictor
