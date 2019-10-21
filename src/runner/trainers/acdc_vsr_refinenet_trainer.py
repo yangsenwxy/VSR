@@ -38,19 +38,21 @@ class AcdcVSRRefineNetTrainer(BaseTrainer):
             inputs, targets, all_imgs, fs, num_all_frames = self._get_inputs_targets(batch)
             T = len(inputs)
             if mode == 'training':
-                outputs1, outputs2 = self.net(inputs, all_imgs, fs, num_all_frames)
-                losses = self._compute_losses(outputs1, targets) + self._compute_losses(outputs2, targets)
+                targets = targets[3:-3]
+                outputs1, outputs2, outputs3 = self.net(inputs, all_imgs, fs, num_all_frames)
+                losses = self._compute_losses(outputs1, targets) + \
+                         self._compute_losses(outputs2, targets) + \
+                         self._compute_losses(outputs3, targets)
                 loss = (torch.stack(losses) * self.loss_weights).sum()
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
             else:
                 with torch.no_grad():
-                    outputs1, outputs2 = self.net(inputs, all_imgs, fs, num_all_frames)
-                    losses = self._compute_losses(outputs1, targets) + self._compute_losses(outputs2, targets)
+                    outputs1, outputs2, outputs3 = self.net(inputs, all_imgs, fs, num_all_frames)
+                    losses = self._compute_losses(outputs3, targets)
                     loss = (torch.stack(losses) * self.loss_weights).sum()
-            metrics =  self._compute_metrics(outputs2, targets)
-
+            metrics =  self._compute_metrics(outputs3, targets)
             batch_size = self.train_dataloader.batch_size if mode == 'training' else self.valid_dataloader.batch_size
             self._update_log(log, batch_size, T, loss, losses, metrics)
             count += batch_size * T
@@ -58,7 +60,7 @@ class AcdcVSRRefineNetTrainer(BaseTrainer):
 
         for key in log:
             log[key] /= count
-        return log, batch, outputs2
+        return log, batch, outputs3
 
     def _get_inputs_targets(self, batch):
         """Specify the data inputs and targets.

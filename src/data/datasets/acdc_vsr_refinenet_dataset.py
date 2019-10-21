@@ -64,6 +64,8 @@ class AcdcVSRRefineNetDataset(BaseDataset):
         all_imgs = self.transforms(*all_imgs)
         all_imgs = [img.permute(2, 0, 1).contiguous() for img in all_imgs]
         lr_imgs, hr_imgs = all_imgs[:len(all_imgs) // 2], all_imgs[len(all_imgs) // 2:]
+        if self.num_frames > len(lr_imgs):
+            lr_imgs, hr_imgs = lr_imgs+lr_imgs, hr_imgs+hr_imgs
         all_imgs = all_imgs[:len(all_imgs) // 2]
         start, num_all_frames = 0, len(all_imgs)
         
