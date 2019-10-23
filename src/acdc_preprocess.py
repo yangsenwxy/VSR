@@ -92,10 +92,10 @@ def main(args):
             start, end = int(re.findall('\d+', str(_paths[0].parts[-1]))[1]), int(re.findall('\d+', str(_paths[1].parts[-1]))[1])
             start, end, num_frames = start-1, end-1, data.shape[-1]
 
-            x1, x2 = np.arange(start, end, 1), np.arange(end, num_frames, 1)
-            y1, y2 = np.cos(np.linspace(0, np.pi, end-start+1))[:-1], np.cos(np.linspace(np.pi, np.pi*2, data.shape[-1]-end+1))[:-1]
+            y1 = np.cos(np.linspace(0, np.pi, end-start, endpoint=False))
+            y2 = np.cos(np.linspace(np.pi, np.pi*2, num_frames-y1.shape[0], endpoint=False))
             pos_code = np.concatenate((y1, y2))
-            pos_codes[patient_name] = pos_code
+            pos_codes[patient_name] = np.concatenate((pos_code[-start:], pos_code[:-start]))
             
         # Calculate the mean and the standard deviation.
         mean = sum_ / num
