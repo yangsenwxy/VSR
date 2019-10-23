@@ -1,8 +1,10 @@
+import re
 import logging
 import argparse
 import random
 import functools
 import cv2
+import pickle
 import numpy as np
 import nibabel as nib
 from numpy.fft import fftshift, ifftshift, fftn, ifftn
@@ -17,7 +19,7 @@ def main(args):
     train_paths = sorted(paths[:int(len(paths) * 0.8)])
     valid_paths = sorted(list(set(paths) - set(train_paths)))
     test_paths = sorted((args.data_dir / 'testing').glob('**/*4d.nii.gz'))
-
+    pos_codes = {}
     for type_, paths in zip(['train', 'valid', 'test'], [train_paths, valid_paths, test_paths]):
         print()
         logging.info(f'Process the {type_} data.')
@@ -25,6 +27,7 @@ def main(args):
         sum_, square_sum, num = 0, 0, 0
         for path in paths:
             patient_name = path.parts[-2]
+            parent_dir = path.parent
             logging.info(f'Process {patient_name}.')
 
             # Read the 4D MRI data.
@@ -84,12 +87,25 @@ def main(args):
                         nib.save(nib.Nifti1Image(lr_img, np.eye(4)),
                                  str(lr_imgs_dir / f'{patient_name}_2d_slice{s+1:0>2d}_frame{t+1:0>2d}.nii.gz'))
 
+            # Calculate the position code.
+            _paths = sorted(parent_dir.glob('*[!gtd].nii.gz'))
+            start, end = int(re.findall('\d+', str(_paths[0].parts[-1]))[1]), int(re.findall('\d+', str(_paths[1].parts[-1]))[1])
+            start, end, num_frames = start-1, end-1, data.shape[-1]
+
+            x1, x2 = np.arange(start, end, 1), np.arange(end, num_frames, 1)
+            y1, y2 = np.cos(np.linspace(0, np.pi, end-start+1))[:-1], np.cos(np.linspace(np.pi, np.pi*2, data.shape[-1]-end+1))[:-1]
+            pos_code = np.concatenate((y1, y2))
+            pos_codes[patient_name] = pos_code
+            
         # Calculate the mean and the standard deviation.
         mean = sum_ / num
         square_mean = square_sum / num
         std = np.sqrt(square_mean - mean ** 2)
         logging.info(f'The mean and the standard deviation of the {type_} data is {mean:.4f} and {std:.4f}.')
 
+        # Save the position codes as the pickle file.
+        with open(args.output_dir / 'position_code.pkl', 'wb') as f:
+            pickle.dump(pos_codes, f)
 
 def _parse_args():
     parser = argparse.ArgumentParser(description="The data preprocessing.")
