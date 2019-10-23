@@ -41,19 +41,24 @@ class ConvLSTMNet(BaseNet):
         self.out_block = _OutBlock(num_features[0], out_channels, upscale_factor)
         self.positional_encoding = _PositionalEncoding() if positional_encoding else None
 
-    def forward(self, inputs, pos_code, forward_input=None, backward_input=None):
+    def forward(self, inputs, forward_inputs, backward_inputs, pos_code):
         if self.updated_memory:
-            if not self.bidirectional:
-                backward_input = None
             with torch.no_grad():
-                states = self.update_memory(forward_input, backward_input)
+                forward_features = torch.stack([self.in_block(forward_input) 
+                                                for forward_input in forward_inputs], dim=0)
+                if self.bidirectional:
+                    backward_features = torch.stack([self.in_block(backward_input) 
+                                                     for backward_input in backward_inputs], dim=0)
+                else:
+                    backward_features = None
+                states = self.convlstm_block.update_memory(forward_features, backward_features)
         else:
             states = None
 
         outputs = []
         in_features = torch.stack([self.in_block(input) for input in inputs], dim=0)
         for i in range(self.num_stages):
-            if self.positional_encoding:
+            if self.positional_encoding is not None:
                 encoded_features = self.positional_encoding(in_features, pos_code)
                 convlstm_features = self.convlstm_block(encoded_features, states)
             else:
@@ -109,74 +114,74 @@ class _ConvLSTM(nn.Module):
             self.backward_cells = copy.deepcopy(self.forward_cells)
             self.fuser = _Fuser(in_channels=hidden_sizes[-1] * 2, out_channels=hidden_sizes[-1])
 
-    def forward(self, input, states=None):
+    def forward(self, inputs, states=None):
         if states is None:
-            forward_states, backward_states = self._init_states(input)
+            forward_states, backward_states = self._init_states(inputs)
         else:
             forward_states, backward_states = states
 
-        T = input.size(0)
-        _input = input
+        T = inputs.size(0)
+        _inputs = inputs
         for layer in range(self.num_layers):
             h_t, c_t = forward_states[layer]
             hidden_states = []
             for t in range(T):
                 if not self.memory:
                     h_t, c_t = forward_states[layer]
-                h_t, c_t = self.forward_cells[layer](_input[t], h_t, c_t)
+                h_t, c_t = self.forward_cells[layer](_inputs[t], h_t, c_t)
                 hidden_states.append(h_t)
-            _input = torch.stack(hidden_states, dim=0)
-        forward_hidden_states = _input
+            _inputs = torch.stack(hidden_states, dim=0)
+        forward_hidden_states = _inputs
 
         if self.bidirectional:
-            _input = input
+            _inputs = inputs
             for layer in range(self.num_layers):
                 h_t, c_t = backward_states[layer]
                 hidden_states = []
                 for t in reversed(range(T)):
                     if not self.memory:
                         h_t, c_t = backward_states[layer]
-                    h_t, c_t = self.backward_cells[layer](_input[t], h_t, c_t)
+                    h_t, c_t = self.backward_cells[layer](_inputs[t], h_t, c_t)
                     hidden_states.insert(0, h_t)
-                _input = torch.stack(hidden_states, dim=0)
-            backward_hidden_states = _input
+                _inputs = torch.stack(hidden_states, dim=0)
+            backward_hidden_states = _inputs
             fused_hidden_states = self.fuser(forward_hidden_states, backward_hidden_states)
             return fused_hidden_states
         else:
             return forward_hidden_states
 
-    def update_memory(self, forward_input, backward_input=None):
-        forward_states, backward_states = self._init_states(forward_input)
-
-        T = forward_input.size(0)
+    def update_memory(self, forward_inputs, backward_inputs=None):
+        forward_states, backward_states = self._init_states(forward_inputs)
+        
+        T = forward_inputs.size(0)
         for layer in range(self.num_layers):
             h_t, c_t = forward_states[layer]
             hidden_states = []
             for t in range(T):
-                h_t, c_t = self.forward_cells[layer](forward_input[t], h_t, c_t)
+                h_t, c_t = self.forward_cells[layer](forward_inputs[t], h_t, c_t)
                 hidden_states.append(h_t)
             forward_states[layer] = (h_t, c_t)
-            forward_input = torch.stack(hidden_states, dim=0)
+            forward_inputs = torch.stack(hidden_states, dim=0)
 
-        if backward_input:
+        if backward_inputs is not None:
             for layer in range(self.num_layers):
                 h_t, c_t = backward_states[layer]
                 hidden_states = []
                 for t in reversed(range(T)):
-                    h_t, c_t = self.backward_cells[layer](backward_input[t], h_t, c_t)
+                    h_t, c_t = self.backward_cells[layer](backward_inputs[t], h_t, c_t)
                     hidden_states.insert(0, h_t)
                 backward_states[layer] = (h_t, c_t)
-                backward_input = torch.stack(hidden_states, dim=0)
+                backward_inputs = torch.stack(hidden_states, dim=0)
             return forward_states, backward_states
         else:
             return forward_states, None
 
-    def _init_states(self, input):
-        _, B, _, H, W = input.size()
+    def _init_states(self, inputs):
+        _, B, _, H, W = inputs.size()
         states = []
         for layer in range(self.num_layers):
             C = self.forward_cells[layer].hidden_size
-            zeros = torch.zeros(B, C, H, W, dtype=input.dtype, device=input.device)
+            zeros = torch.zeros(B, C, H, W, dtype=inputs.dtype, device=inputs.device)
             states.append((zeros, zeros))
         if self.bidirectional:
             return states, states
@@ -225,7 +230,7 @@ class _PositionalEncoding(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, input, pos_code):
-        _, _, C, H, W = input.size()
+    def forward(self, inputs, pos_code):
+        _, _, C, H, W = inputs.size()
         pos_code = pos_code.repeat(C, H, W, 1, 1).permute(4, 3, 0, 1, 2).contiguous()
-        return input + pos_code
+        return inputs + pos_code

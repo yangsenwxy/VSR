@@ -44,10 +44,10 @@ class AcdcVSRRefinePredictor(AcdcVSRPredictor):
         count = 0
         for batch in trange:
             batch = self._allocate_data(batch)
-            inputs, targets, pos_code, index = self._get_inputs_targets(batch)
+            inputs, targets, forward_inputs, backward_inputs, pos_code, index = self._get_inputs_targets(batch)
             T = len(inputs)
             with torch.no_grad():
-                outputs = self.net(inputs, pos_code)
+                outputs = self.net(inputs, forward_inputs, backward_inputs, pos_code)
                 losses = self._compute_losses(outputs, targets)
                 loss = (losses.mean(dim=0) * self.loss_weights).sum()
                 metrics = self._compute_metrics(outputs, targets)
@@ -106,7 +106,7 @@ class AcdcVSRRefinePredictor(AcdcVSRPredictor):
             targets (list of torch.Tensor): The data targets.
             index (int): The index of the target path in the `dataloder.data`.
         """
-        return batch['lr_imgs'], batch['hr_imgs'], batch['pos_code'], batch['index']
+        return batch['lr_imgs'], batch['hr_imgs'], batch['forward_inputs'], batch['backward_inputs'], batch['pos_code'], batch['index']
     
     def _compute_losses(self, outputs, targets):
         """Compute the losses.

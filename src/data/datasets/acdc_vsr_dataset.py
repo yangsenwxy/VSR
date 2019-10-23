@@ -15,11 +15,12 @@ class AcdcVSRDataset(BaseDataset):
         transforms (list of Box): The preprocessing techniques applied to the data.
         augments (list of Box): The augmentation techniques applied to the training data (default: None).
         num_frames (int): The number of the frames of a sequence (default: 5).
+        num_updated_frames (int): The number of the updated frames (default: 6).
         temporal_order (str): The order to form the sequence (default: 'last').
             'last': The sequence would be {t-n+1, ..., t-1, t}.
             'middle': The sequence would be {t-(n-1)//2, ..., t-1, t, t+1, ..., t+[(n-1)-(n-1)//2]}.
     """
-    def __init__(self, downscale_factor, transforms, augments=None, num_frames=5, temporal_order='last', **kwargs):
+    def __init__(self, downscale_factor, transforms, augments=None, num_frames=5, num_updated_frames=1, temporal_order='last', **kwargs):
         super().__init__(**kwargs)
         if downscale_factor not in [2, 3, 4]:
             raise ValueError(f'The downscale factor should be 2, 3, 4. Got {downscale_factor}.')
@@ -28,6 +29,7 @@ class AcdcVSRDataset(BaseDataset):
         self.transforms = compose(transforms)
         self.augments = compose(augments)        
         self.num_frames = num_frames
+        self.num_updated_frames = num_updated_frames
         
         if temporal_order not in ['last', 'middle']:
             raise ValueError(f"The temporal order should be 'last' or 'middle'. Got {temporal_order}.")
@@ -56,6 +58,7 @@ class AcdcVSRDataset(BaseDataset):
         lr_imgs = nib.load(str(lr_path)).get_data() # (H, W, C, T)
         hr_imgs = nib.load(str(hr_path)).get_data() # (H, W, C, T)
         T = lr_imgs.shape[-1]
+        n_u = self.num_updated_frames
         pos_code = np.cos(np.linspace(0, 2 * np.pi, num=T, endpoint=False))
         
         if self.type == 'train':
@@ -65,22 +68,31 @@ class AcdcVSRDataset(BaseDataset):
                 start, end = t - n + 1, t + 1
             elif self.temporal_order == 'middle':
                 start, end = t - (n - 1) // 2, t + ((n - 1) - (n - 1) // 2) + 1
-            if start < 0:
+            start, end = start - n_u, end + n_u
+            if start >= 0 and end <= T:
+                lr_imgs = lr_imgs[..., start:end]
+                hr_imgs = hr_imgs[..., start:end]
+                pos_code = pos_code[start:end]
+            elif start < 0 and end <= T:
                 lr_imgs = np.concatenate((lr_imgs[..., start:], lr_imgs[..., :end]), axis=-1)
                 hr_imgs = np.concatenate((hr_imgs[..., start:], hr_imgs[..., :end]), axis=-1)
                 pos_code = np.concatenate((pos_code[start:], pos_code[:end]), axis=-1)
-            elif end > T:
+            elif start >= 0 and end > T:
                 end %= T
                 lr_imgs = np.concatenate((lr_imgs[..., start:], lr_imgs[..., :end]), axis=-1)
                 hr_imgs = np.concatenate((hr_imgs[..., start:], hr_imgs[..., :end]), axis=-1)
                 pos_code = np.concatenate((pos_code[start:], pos_code[:end]), axis=-1)
             else:
-                lr_imgs = lr_imgs[..., start:end]
-                hr_imgs = hr_imgs[..., start:end]
-                pos_code = pos_code[start:end]
+                end %= T
+                lr_imgs = np.concatenate((lr_imgs[..., start:], lr_imgs, lr_imgs[..., :end]), axis=-1)
+                hr_imgs = np.concatenate((hr_imgs[..., start:], hr_imgs, hr_imgs[..., :end]), axis=-1)
+                pos_code = np.concatenate((pos_code[start:], pos_code, pos_code[:end]), axis=-1)
             imgs = [lr_imgs[..., t] for t in range(lr_imgs.shape[-1])] + \
                    [hr_imgs[..., t] for t in range(hr_imgs.shape[-1])] # list of (H, W, C)
         else:
+            lr_imgs = np.concatenate((lr_imgs[..., -n_u:], lr_imgs, lr_imgs[..., :n_u]), axis=-1)
+            hr_imgs = np.concatenate((hr_imgs[..., -n_u:], hr_imgs, hr_imgs[..., :n_u]), axis=-1)
+            pos_code = np.concatenate((pos_code[-n_u:], pos_code, pos_code[:n_u]), axis=-1)
             imgs = [lr_imgs[..., t] for t in range(lr_imgs.shape[-1])] + \
                    [hr_imgs[..., t] for t in range(hr_imgs.shape[-1])] # list of (H, W, C)
 
@@ -89,5 +101,10 @@ class AcdcVSRDataset(BaseDataset):
         imgs = self.transforms(*imgs)
         imgs = [img.permute(2, 0, 1).contiguous() for img in imgs]
         lr_imgs, hr_imgs = imgs[:len(imgs) // 2], imgs[len(imgs) // 2:]
-        pos_code = self.transforms(pos_code, normalize_tags=[False])
-        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'pos_code': pos_code, 'index': index}
+        forward_inputs = lr_imgs[:n_u]
+        backward_inputs = lr_imgs[-n_u:]
+        lr_imgs = lr_imgs[n_u:-n_u]
+        hr_imgs = hr_imgs[n_u:-n_u]
+        pos_code = self.transforms(pos_code, normalize_tags=[False])[n_u:-n_u]
+        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'forward_inputs':forward_inputs,
+                'backward_inputs':backward_inputs, 'pos_code': pos_code, 'index': index}
