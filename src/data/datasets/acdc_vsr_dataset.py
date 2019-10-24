@@ -1,3 +1,4 @@
+import pickle
 import numpy as np
 import nibabel as nib
 
@@ -20,7 +21,7 @@ class AcdcVSRDataset(BaseDataset):
             'last': The sequence would be {t-n+1, ..., t-1, t}.
             'middle': The sequence would be {t-(n-1)//2, ..., t-1, t, t+1, ..., t+[(n-1)-(n-1)//2]}.
     """
-    def __init__(self, downscale_factor, transforms, augments=None, num_frames=5, num_updated_frames=1, temporal_order='last', **kwargs):
+    def __init__(self, downscale_factor, transforms, augments=None, num_frames=5, num_updated_frames=1, temporal_order='last', pos_code_path=None, **kwargs):
         super().__init__(**kwargs)
         if downscale_factor not in [2, 3, 4]:
             raise ValueError(f'The downscale factor should be 2, 3, 4. Got {downscale_factor}.')
@@ -30,6 +31,7 @@ class AcdcVSRDataset(BaseDataset):
         self.augments = compose(augments)        
         self.num_frames = num_frames
         self.num_updated_frames = num_updated_frames
+        self.pos_code_path = pos_code_path
         
         if temporal_order not in ['last', 'middle']:
             raise ValueError(f"The temporal order should be 'last' or 'middle'. Got {temporal_order}.")
@@ -59,7 +61,15 @@ class AcdcVSRDataset(BaseDataset):
         hr_imgs = nib.load(str(hr_path)).get_data() # (H, W, C, T)
         T = lr_imgs.shape[-1]
         n_u = self.num_updated_frames
-        pos_code = np.cos(np.linspace(0, 2 * np.pi, num=T, endpoint=False))
+        
+        if self.pos_code_path == None:
+            pos_code = np.cos(np.linspace(0, 2 * np.pi, num=T, endpoint=False))
+        else:
+            with open(self.pos_code_path, 'rb') as f:
+                pos_codes = pickle.load(f)
+                filename = lr_path.parts[-1].split('.')[0]
+                patient, _, _ = filename.split('_')
+                pos_code = pos_codes[patient]
         
         if self.type == 'train':
             # Compute the start and the end index of the sequence according to the temporal order.
@@ -106,5 +116,5 @@ class AcdcVSRDataset(BaseDataset):
         lr_imgs = lr_imgs[n_u:-n_u]
         hr_imgs = hr_imgs[n_u:-n_u]
         pos_code = self.transforms(pos_code, normalize_tags=[False])[n_u:-n_u]
-        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'forward_inputs':forward_inputs,
-                'backward_inputs':backward_inputs, 'pos_code': pos_code, 'index': index}
+        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'forward_inputs': forward_inputs,
+                'backward_inputs': backward_inputs, 'pos_code': pos_code, 'index': index}

@@ -36,15 +36,17 @@ class AcdcVSRRefineTrainer(AcdcVSRTrainer):
             inputs, targets, forward_inputs, backward_inputs, pos_code = self._get_inputs_targets(batch)
             T = len(inputs)
             if mode == 'training':
-                outputs = self.net(inputs, forward_inputs, backward_inputs, pos_code)
-                losses = self._compute_losses(outputs, targets)
+                outputs, forward_outputs, backward_outputs = self.net(inputs, forward_inputs, backward_inputs, pos_code)
+                losses = self._compute_losses(outputs, targets) + \
+                         self._compute_losses(forward_outputs, targets) + \
+                         self._compute_losses(backward_outputs, targets)
                 loss = (torch.stack(losses) * self.loss_weights).sum()
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
             else:
                 with torch.no_grad():
-                    outputs = self.net(inputs, forward_inputs, backward_inputs, pos_code)
+                    outputs, _, _ = self.net(inputs, forward_inputs, backward_inputs, pos_code)
                     losses = self._compute_losses(outputs, targets)
                     loss = (torch.stack(losses) * self.loss_weights).sum()
             metrics =  self._compute_metrics(outputs, targets)

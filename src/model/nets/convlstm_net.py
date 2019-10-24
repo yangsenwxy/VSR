@@ -44,10 +44,10 @@ class ConvLSTMNet(BaseNet):
     def forward(self, inputs, forward_inputs, backward_inputs, pos_code):
         if self.updated_memory:
             with torch.no_grad():
-                forward_features = torch.stack([self.in_block(forward_input) 
+                forward_features = torch.stack([self.in_block(forward_input)
                                                 for forward_input in forward_inputs], dim=0)
                 if self.bidirectional:
-                    backward_features = torch.stack([self.in_block(backward_input) 
+                    backward_features = torch.stack([self.in_block(backward_input)
                                                      for backward_input in backward_inputs], dim=0)
                 else:
                     backward_features = None
@@ -55,12 +55,17 @@ class ConvLSTMNet(BaseNet):
         else:
             states = None
 
-        outputs = []
+        outputs, forward_outputs, backward_outputs = [], [], []
         in_features = torch.stack([self.in_block(input) for input in inputs], dim=0)
         for i in range(self.num_stages):
             if self.positional_encoding is not None:
-                encoded_features = self.positional_encoding(in_features, pos_code)
-                convlstm_features = self.convlstm_block(encoded_features, states)
+                convlstm_features, forward_features, backward_features = self.convlstm_block(in_features, states, pos_code)
+                features = [in_feature + forward_feature
+                        for in_feature, forward_feature in zip(in_features, forward_features)]
+                forward_outputs.append([self.out_block(feature) for feature in features])
+                features = [in_feature + backward_feature
+                        for in_feature, backward_feature in zip(in_features, backward_features)]
+                backward_outputs.append([self.out_block(feature) for feature in features])
             else:
                 convlstm_features = self.convlstm_block(in_features, states)
             if self.bidirectional:
@@ -74,7 +79,10 @@ class ConvLSTMNet(BaseNet):
                             for in_feature, convlstm_feature in zip(in_features, convlstm_features)]
                 outputs.append([self.out_block(feature) for feature in features])
             in_features = torch.stack(features, dim=0)
-        return outputs
+        if self.bidirectional:
+            return outputs, forward_outputs, backward_outputs
+        else:
+            return outputs
 
 
 class _InBlock(nn.Sequential):
@@ -119,9 +127,9 @@ class _ConvLSTM(nn.Module):
                                                     kernel_size=kernel_size))
         if bidirectional:
             self.backward_cells = copy.deepcopy(self.forward_cells)
-            self.fuser = _Fuser(in_channels=hidden_sizes[-1] * 2, out_channels=hidden_sizes[-1])
+            self.fuser = _Fuser(in_channels=hidden_sizes[-1] * 2 + 1, out_channels=hidden_sizes[-1])
 
-    def forward(self, inputs, states=None):
+    def forward(self, inputs, states=None, pos_code=None):
         if states is None:
             forward_states, backward_states = self._init_states(inputs)
         else:
@@ -152,14 +160,14 @@ class _ConvLSTM(nn.Module):
                     hidden_states.insert(0, h_t)
                 _inputs = torch.stack(hidden_states, dim=0)
             backward_hidden_states = _inputs
-            fused_hidden_states = self.fuser(forward_hidden_states, backward_hidden_states)
-            return forward_hidden_states, backward_hidden_states, fused_hidden_states
+            fused_hidden_states = self.fuser(forward_hidden_states, backward_hidden_states, pos_code)
+            return fused_hidden_states, forward_hidden_states, backward_hidden_states
         else:
             return forward_hidden_states
 
     def update_memory(self, forward_inputs, backward_inputs=None):
         forward_states, backward_states = self._init_states(forward_inputs)
-        
+
         T = forward_inputs.size(0)
         for layer in range(self.num_layers):
             h_t, c_t = forward_states[layer]
@@ -223,13 +231,18 @@ class _Fuser(nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.bidirectional_fuser = nn.Conv2d(in_channels=in_channels,
-                                             out_channels=out_channels,
-                                             kernel_size=1)
+        self.positional_encoding = _PositionalEncoding()
 
-    def forward(self, forward_hidden_states, backward_hidden_states):
-        fused_hidden_states = torch.stack([self.bidirectional_fuser(torch.cat([fh_t, bh_t], dim=1))
-                                           for fh_t, bh_t in zip(forward_hidden_states, backward_hidden_states)], dim=0)
+        self.bidirectional_fuser = nn.Sequential()
+        self.bidirectional_fuser.add_module('conv1', nn.Conv3d(in_channels, out_channels, kernel_size=3, padding=1))
+        self.bidirectional_fuser.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
+        self.bidirectional_fuser.add_module('conv2', nn.Conv3d(out_channels, out_channels, kernel_size=3, padding=1))
+        self.bidirectional_fuser.add_module('prelu2', nn.PReLU(num_parameters=1, init=0.2))
+
+    def forward(self, forward_hidden_states, backward_hidden_states, pos_code):
+        inputs = torch.cat((forward_hidden_states, backward_hidden_states), dim=2)
+        features = self.positional_encoding(inputs, pos_code).permute(1, 2, 0, 3, 4).contiguous()
+        fused_hidden_states = self.bidirectional_fuser(features).permute(2, 0, 1, 3, 4).contiguous()
         return fused_hidden_states
 
 
@@ -238,6 +251,6 @@ class _PositionalEncoding(nn.Module):
         super().__init__()
 
     def forward(self, inputs, pos_code):
-        _, _, C, H, W = inputs.size()
-        pos_code = pos_code.repeat(C, H, W, 1, 1).permute(4, 3, 0, 1, 2).contiguous()
-        return inputs + pos_code
+        _, _, _, H, W = inputs.size()
+        pos_code = pos_code.repeat(1, H, W, 1, 1).permute(4, 3, 0, 1, 2).contiguous()
+        return torch.cat((inputs, pos_code), dim=2)
