@@ -63,9 +63,16 @@ class ConvLSTMNet(BaseNet):
                 convlstm_features = self.convlstm_block(encoded_features, states)
             else:
                 convlstm_features = self.convlstm_block(in_features, states)
-            features = [in_feature + convlstm_feature
-                        for in_feature, convlstm_feature in zip(in_features, convlstm_features)]
-            outputs.append([self.out_block(feature) for feature in features])
+            if self.bidirectional:
+                features = [[in_feature + feature
+                             for in_feature, feature in zip(in_features, features)]
+                            for features in convlstm_features]
+                outputs.extend([[self.out_block(feature) for feature in _features] for _features in features])
+                features = features[-1]
+            else:
+                features = [in_feature + convlstm_feature
+                            for in_feature, convlstm_feature in zip(in_features, convlstm_features)]
+                outputs.append([self.out_block(feature) for feature in features])
             in_features = torch.stack(features, dim=0)
         return outputs
 
@@ -146,7 +153,7 @@ class _ConvLSTM(nn.Module):
                 _inputs = torch.stack(hidden_states, dim=0)
             backward_hidden_states = _inputs
             fused_hidden_states = self.fuser(forward_hidden_states, backward_hidden_states)
-            return fused_hidden_states
+            return forward_hidden_states, backward_hidden_states, fused_hidden_states
         else:
             return forward_hidden_states
 
