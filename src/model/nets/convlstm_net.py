@@ -27,6 +27,7 @@ class ConvLSTMNet(BaseNet):
         self.upscale_factor = upscale_factor
         self.memory = memory
         self.updated_memory = updated_memory
+        self.positional_encoding = positional_encoding
 
         if upscale_factor not in [2, 3, 4, 8]:
             raise ValueError(f'The upscale factor should be 2, 3, 4 or 8. Got {upscale_factor}.')
@@ -37,41 +38,43 @@ class ConvLSTMNet(BaseNet):
                                         kernel_size=3,
                                         num_layers=len(num_features),
                                         bidirectional=bidirectional,
-                                        memory=memory)
+                                        memory=memory,
+                                        positional_encoding=positional_encoding)
         self.out_block = _OutBlock(num_features[0], out_channels, upscale_factor)
-        self.positional_encoding = _PositionalEncoding() if positional_encoding else None
 
     def forward(self, inputs, forward_inputs, backward_inputs, pos_code):
-        if self.updated_memory:
-            with torch.no_grad():
-                forward_features = torch.stack([self.in_block(forward_input)
-                                                for forward_input in forward_inputs], dim=0)
-                if self.bidirectional:
-                    backward_features = torch.stack([self.in_block(backward_input)
-                                                     for backward_input in backward_inputs], dim=0)
-                else:
-                    backward_features = None
-                states = self.convlstm_block.update_memory(forward_features, backward_features)
-        else:
-            states = None
-
-        outputs, forward_outputs, backward_outputs = [], [], []
+        outputs = []
         in_features = torch.stack([self.in_block(input) for input in inputs], dim=0)
+        forward_features = torch.stack([self.in_block(forward_input)
+                                        for forward_input in forward_inputs], dim=0)
+        if self.bidirectional:
+            backward_features = torch.stack([self.in_block(backward_input)
+                                             for backward_input in backward_inputs], dim=0)
+        else:
+            backward_features = None
+        
         for i in range(self.num_stages):
-            if self.positional_encoding is not None:
-                convlstm_features, forward_features, backward_features = self.convlstm_block(in_features, states, pos_code)
-                features = [in_feature + forward_feature
-                        for in_feature, forward_feature in zip(in_features, forward_features)]
-                forward_outputs.append([self.out_block(feature) for feature in features])
-                features = [in_feature + backward_feature
-                        for in_feature, backward_feature in zip(in_features, backward_features)]
-                backward_outputs.append([self.out_block(feature) for feature in features])
+            if self.updated_memory:
+                with torch.no_grad():
+                    convlstm_features, states = self.convlstm_block.update_memory(forward_features, backward_features)
+                    forward_convlstm_features, backward_convlstm_features = convlstm_features
+                    forward_features = torch.stack([forward_feature + forward_convlstm_feature
+                                                    for forward_feature, forward_convlstm_feature \
+                                                    in zip(forward_features, forward_convlstm_features)], dim=0)
+                    if self.bidirectional:
+                        backward_features = torch.stack([backward_feature + backward_convlstm_feature
+                                                         for backward_feature, backward_convlstm_feature \
+                                                         in zip(backward_features, backward_convlstm_features)], dim=0)
+                    else:
+                        backward_features = None
             else:
-                convlstm_features = self.convlstm_block(in_features, states)
+                states = None
+            
+            convlstm_features = self.convlstm_block(in_features, states, pos_code)
             if self.bidirectional:
-                features = [[in_feature + feature
-                             for in_feature, feature in zip(in_features, features)]
-                            for features in convlstm_features]
+                features = [[in_feature + convlstm_feature
+                             for in_feature, convlstm_feature in zip(in_features, _convlstm_features)]
+                            for _convlstm_features in convlstm_features]
                 outputs.extend([[self.out_block(feature) for feature in _features] for _features in features])
                 features = features[-1]
             else:
@@ -79,10 +82,7 @@ class ConvLSTMNet(BaseNet):
                             for in_feature, convlstm_feature in zip(in_features, convlstm_features)]
                 outputs.append([self.out_block(feature) for feature in features])
             in_features = torch.stack(features, dim=0)
-        if self.bidirectional:
-            return outputs, forward_outputs, backward_outputs
-        else:
-            return outputs
+        return outputs
 
 
 class _InBlock(nn.Sequential):
@@ -107,7 +107,8 @@ class _OutBlock(nn.Sequential):
 
 
 class _ConvLSTM(nn.Module):
-    def __init__(self, input_size, hidden_sizes, kernel_size, num_layers, bidirectional=False, memory=True):
+    def __init__(self, input_size, hidden_sizes, kernel_size, num_layers, 
+                 bidirectional=False, memory=True, positional_encoding=False):
         super().__init__()
         self.input_size = input_size
         self.hidden_sizes = hidden_sizes
@@ -115,6 +116,7 @@ class _ConvLSTM(nn.Module):
         self.num_layers = num_layers
         self.bidirectional = bidirectional
         self.memory = memory
+        self.positional_encoding = positional_encoding
 
         self.forward_cells = nn.ModuleList()
         for layer in range(num_layers):
@@ -127,7 +129,14 @@ class _ConvLSTM(nn.Module):
                                                     kernel_size=kernel_size))
         if bidirectional:
             self.backward_cells = copy.deepcopy(self.forward_cells)
-            self.fuser = _Fuser(in_channels=hidden_sizes[-1] * 2 + 1, out_channels=hidden_sizes[-1])
+            if positional_encoding:
+                self.bidirectional_fuser = _BidirectionalFuser(in_channels=hidden_sizes[-1] * 2 + 1, 
+                                                               out_channels=hidden_sizes[-1], 
+                                                               positional_encoding=positional_encoding)
+            else:
+                self.bidirectional_fuser = _BidirectionalFuser(in_channels=hidden_sizes[-1] * 2, 
+                                                               out_channels=hidden_sizes[-1], 
+                                                               positional_encoding=positional_encoding)
 
     def forward(self, inputs, states=None, pos_code=None):
         if states is None:
@@ -160,8 +169,8 @@ class _ConvLSTM(nn.Module):
                     hidden_states.insert(0, h_t)
                 _inputs = torch.stack(hidden_states, dim=0)
             backward_hidden_states = _inputs
-            fused_hidden_states = self.fuser(forward_hidden_states, backward_hidden_states, pos_code)
-            return fused_hidden_states, forward_hidden_states, backward_hidden_states
+            fused_hidden_states = self.bidirectional_fuser(forward_hidden_states, backward_hidden_states, pos_code)
+            return forward_hidden_states, backward_hidden_states, fused_hidden_states
         else:
             return forward_hidden_states
 
@@ -177,7 +186,8 @@ class _ConvLSTM(nn.Module):
                 hidden_states.append(h_t)
             forward_states[layer] = (h_t, c_t)
             forward_inputs = torch.stack(hidden_states, dim=0)
-
+        forward_hidden_states = forward_inputs
+        
         if backward_inputs is not None:
             for layer in range(self.num_layers):
                 h_t, c_t = backward_states[layer]
@@ -187,9 +197,10 @@ class _ConvLSTM(nn.Module):
                     hidden_states.insert(0, h_t)
                 backward_states[layer] = (h_t, c_t)
                 backward_inputs = torch.stack(hidden_states, dim=0)
-            return forward_states, backward_states
+            backward_hidden_states = backward_inputs
+            return (forward_hidden_states, backward_hidden_states), (forward_states, backward_states)
         else:
-            return forward_states, None
+            return (forward_hidden_states, None), (forward_states, None)
 
     def _init_states(self, inputs):
         _, B, _, H, W = inputs.size()
@@ -226,31 +237,34 @@ class _ConvLSTMCell(nn.Module):
         return h_1, c_1
 
 
-class _Fuser(nn.Module):
-    def __init__(self, in_channels, out_channels):
+class _BidirectionalFuser(nn.Module):
+    def __init__(self, in_channels, out_channels, positional_encoding=False):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.positional_encoding = _PositionalEncoding()
-
-        self.bidirectional_fuser = nn.Sequential()
-        self.bidirectional_fuser.add_module('conv1', nn.Conv3d(in_channels, out_channels, kernel_size=3, padding=1))
-        self.bidirectional_fuser.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
-        self.bidirectional_fuser.add_module('conv2', nn.Conv3d(out_channels, out_channels, kernel_size=3, padding=1))
-        self.bidirectional_fuser.add_module('prelu2', nn.PReLU(num_parameters=1, init=0.2))
-
+        self.positional_encoding = positional_encoding
+        if positional_encoding:
+            self.fuser = nn.Sequential()
+            self.fuser.add_module('conv1', nn.Conv3d(in_channels, out_channels, kernel_size=3, padding=1))
+            self.fuser.add_module('prelu1', nn.PReLU(num_parameters=1, init=0.2))
+            self.fuser.add_module('conv2', nn.Conv3d(out_channels, out_channels, kernel_size=3, padding=1))
+            self.fuser.add_module('prelu2', nn.PReLU(num_parameters=1, init=0.2))
+        else:
+            self.fuser = nn.Conv2d(in_channels=in_channels,
+                                   out_channels=out_channels,
+                                   kernel_size=1)
+        
     def forward(self, forward_hidden_states, backward_hidden_states, pos_code):
-        inputs = torch.cat((forward_hidden_states, backward_hidden_states), dim=2)
-        features = self.positional_encoding(inputs, pos_code).permute(1, 2, 0, 3, 4).contiguous()
-        fused_hidden_states = self.bidirectional_fuser(features).permute(2, 0, 1, 3, 4).contiguous()
+        if self.positional_encoding:
+            _, _, _, H, W = forward_hidden_states.size()
+            pos_code = pos_code.repeat(1, H, W, 1, 1).permute(4, 3, 0, 1, 2).contiguous()
+            features = torch.cat([forward_hidden_states, 
+                                  backward_hidden_states,
+                                  pos_code], dim=2).permute(1, 2, 0, 3, 4).contiguous()
+            fused_hidden_states = self.fuser(features).permute(2, 0, 1, 3, 4).contiguous()
+        else:
+            features = [torch.cat([forward_hidden_state, backward_hidden_state], dim=1)
+                        for forward_hidden_state, backward_hidden_state \
+                        in zip(forward_hidden_states, backward_hidden_states)]
+            fused_hidden_states = torch.stack([self.fuser(feature) for feature in features], dim=0)
         return fused_hidden_states
-
-
-class _PositionalEncoding(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, inputs, pos_code):
-        _, _, _, H, W = inputs.size()
-        pos_code = pos_code.repeat(1, H, W, 1, 1).permute(4, 3, 0, 1, 2).contiguous()
-        return torch.cat((inputs, pos_code), dim=2)

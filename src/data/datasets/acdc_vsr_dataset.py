@@ -62,8 +62,8 @@ class AcdcVSRDataset(BaseDataset):
         T = lr_imgs.shape[-1]
         n_u = self.num_updated_frames
         
-        if self.pos_code_path == None:
-            pos_code = np.cos(np.linspace(0, 2 * np.pi, num=T, endpoint=False))
+        if self.pos_code_path is None:
+            pos_code = None
         else:
             with open(self.pos_code_path, 'rb') as f:
                 pos_codes = pickle.load(f)
