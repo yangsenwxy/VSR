@@ -14,3 +14,4 @@ from .toflow_net import TOFlowNet
 from .drf_net import DRFNet
 from .frvsr_net import FRVSRNet
 from .convlstm_net import ConvLSTMNet
+from .refine_net import RefineNet

@@ -33,10 +33,10 @@ class AcdcVSRRefineTrainer(AcdcVSRTrainer):
         count = 0
         for batch in trange:
             batch = self._allocate_data(batch)
-            inputs, targets, forward_inputs, backward_inputs, pos_code = self._get_inputs_targets(batch)
+            targets, inputs, pos_codes, start_frame, num_all_frames = self._get_inputs_targets(batch)
             T = len(inputs)
             if mode == 'training':
-                outputs = self.net(inputs, forward_inputs, backward_inputs, pos_code)
+                outputs = self.net(inputs, pos_codes, start_frame, num_all_frames)
                 losses = self._compute_losses(outputs, targets)
                 loss = (torch.stack(losses) * self.loss_weights).sum()
                 self.optimizer.zero_grad()
@@ -44,7 +44,7 @@ class AcdcVSRRefineTrainer(AcdcVSRTrainer):
                 self.optimizer.step()
             else:
                 with torch.no_grad():
-                    outputs = self.net(inputs, forward_inputs, backward_inputs, pos_code)
+                    outputs = self.net(inputs, pos_codes, start_frame, num_all_frames)
                     losses = self._compute_losses(outputs, targets)
                     loss = (torch.stack(losses) * self.loss_weights).sum()
             metrics =  self._compute_metrics(outputs, targets)
@@ -67,7 +67,7 @@ class AcdcVSRRefineTrainer(AcdcVSRTrainer):
             inputs (list of torch.Tensor): The data inputs.
             targets (list of torch.Tensor): The data targets.
         """
-        return batch['lr_imgs'], batch['hr_imgs'], batch['forward_inputs'], batch['backward_inputs'], batch['pos_code']
+        return batch['hr_imgs'], batch['all_imgs'], batch['pos_codes'], batch['start_frame'], batch['num_all_frames']
     
     def _compute_losses(self, outputs, targets):
         """Compute the losses.
@@ -86,7 +86,7 @@ class AcdcVSRRefineTrainer(AcdcVSRTrainer):
                     # Average the losses computed at every time steps.
                     loss.append(torch.stack([loss_fn(output, target) for output, target in zip(_outputs, targets)]).mean())
                 # Average the losses computed at every refinement stages.
-                loss = torch.stack(loss).mean()
+                loss = torch.stack(loss).sum()
                 losses.append(loss)
         else:
             losses = []
