@@ -17,7 +17,7 @@ class RefineNet(BaseNet):
         upscale_factor (int): The upscale factor (2, 3, 4 or 8).
     """
     def __init__(self, in_channels, out_channels, num_frames, num_features, num_stages, upscale_factor, bidirectional=False, 
-                 memory=True, updated_memory=False, updated_memory_frame_number=None, positional_encoding=False):
+                 memory=True, updated_memory=False, updated_memory_frame_number=0, positional_encoding=False):
         super().__init__()
         assert num_features[0] == num_features[-1]
         self.in_channels = in_channels
@@ -63,8 +63,13 @@ class RefineNet(BaseNet):
         inputs, pos_codes, forward_frames, backward_frames = self._get_inputs(inputs, pos_codes, start_frame, num_all_frames)
         
         in_features = torch.stack([self.in_block(input) for input in inputs], dim=0)
-        forward_features = torch.stack([self.in_block(input) for input in forward_frames], dim=0)
-        backward_features = torch.stack([self.in_block(input) for input in backward_frames], dim=0) if self.bidirectional else None
+        if self.updated_memory:
+            with torch.no_grad():
+                forward_features = torch.stack([self.in_block(input) for input in forward_frames], dim=0)
+                if self.bidirectional:
+                    backward_features = torch.stack([self.in_block(input) for input in backward_frames], dim=0)
+                else:
+                    backward_features = None
         
         outputs = []
         for i in range(self.num_stages):
@@ -78,28 +83,30 @@ class RefineNet(BaseNet):
                     for j, feature in enumerate(forward_features):
                         forward_features[j] = self.forward_lstm_block(feature) + feature
                     if self.bidirectional:
-                        for j, feature in enumerate(backward_features):
-                            backward_features[j] = self.backward_lstm_block(feature) + feature
+                        for j in reversed(range(len(backward_features))):
+                            backward_features[j] = self.backward_lstm_block(backward_features[j]) + feature
             
             # Main part
-            fuse_inputs, forward_h_ts, backward_h_ts = [], [], []
-            for j, feature in enumerate(in_features):
+            forward_h_ts, backward_h_ts = [], []
+            for feature in in_features:
                 forward_h_t = self.forward_lstm_block(feature)
                 forward_h_ts.append(forward_h_t)
-                fuse_input = forward_h_t
-
-                if self.bidirectional:
-                    backward_h_t = self.backward_lstm_block(feature)
-                    backward_h_ts.append(backward_h_t)
-                    fuse_input = torch.cat((fuse_input, backward_h_t), dim=1)                
-                if self.positional_encoding:
-                    fuse_input = torch.cat((fuse_input, pos_codes[j]), dim=1)
-                fuse_inputs.append(fuse_input)
+            fuse_inputs = torch.stack(forward_h_ts, dim=2) # N, C, T, H, W
             
+            if self.bidirectional:
+                for feature in reversed(in_features):
+                    backward_h_t = self.backward_lstm_block(feature)
+                    backward_h_ts.insert(0, backward_h_t)
+                fuse_inputs = torch.cat((fuse_inputs, torch.stack(backward_h_ts, dim=2)), dim=1)
+                
+            if self.positional_encoding:
+                _pos_codes = pos_codes.permute(1, 2, 0, 3, 4).contiguous()
+                fuse_inputs = torch.cat((fuse_inputs, _pos_codes), dim=1)
+
+            print(fuse_inputs.shape)
             outputs.append([self.out_block(forward_h_ts[n] + in_features[n]) for n in range(self.num_frames)])
             if self.bidirectional:
                 outputs.append([self.out_block(backward_h_ts[n] + in_features[n]) for n in range(self.num_frames)])
-            fuse_inputs = torch.stack(fuse_inputs, dim=2) # N, C, T, H, W
             fuse_features = self.fuse_block(fuse_inputs).permute(2, 0, 1, 3, 4).contiguous()
             outputs.append([self.out_block(fuse_features[n] + in_features[n]) for n in range(self.num_frames)])
             
@@ -325,7 +332,7 @@ class _FuseBlock(nn.Module):
             self.fuser.add_module('conv2', nn.Conv3d(out_channels, out_channels, kernel_size=3, padding=1))
             self.fuser.add_module('prelu2', nn.PReLU(num_parameters=1, init=0.2))
         else:
-            self.fuser = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+            self.fuser = nn.Conv3d(in_channels, out_channels, kernel_size=1)
         
     def forward(self, inputs):
         return self.fuser(inputs)
