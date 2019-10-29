@@ -115,6 +115,6 @@ class AcdcVSRDataset(BaseDataset):
         backward_inputs = lr_imgs[-n_u:]
         lr_imgs = lr_imgs[n_u:-n_u]
         hr_imgs = hr_imgs[n_u:-n_u]
-        pos_code = self.transforms(pos_code, normalize_tags=[False])[n_u:-n_u]
+        pos_code = self.transforms(pos_code, normalize_tags=[False])[n_u-2:-n_u+2]
         return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'forward_inputs': forward_inputs,
                 'backward_inputs': backward_inputs, 'pos_code': pos_code, 'index': index}

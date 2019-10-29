@@ -44,12 +44,12 @@ class ConvLSTMNet(BaseNet):
 
     def forward(self, inputs, forward_inputs, backward_inputs, pos_code):
         outputs = []
-        in_features = torch.stack([self.in_block(input) for input in inputs], dim=0)
+        in_features = torch.stack([self.in_block(input) for input in forward_inputs[-2:]+inputs+backward_inputs[:2]], dim=0)
         forward_features = torch.stack([self.in_block(forward_input)
-                                        for forward_input in forward_inputs], dim=0)
+                                        for forward_input in forward_inputs[:-2]], dim=0)
         if self.bidirectional:
             backward_features = torch.stack([self.in_block(backward_input)
-                                             for backward_input in backward_inputs], dim=0)
+                                             for backward_input in backward_inputs[2:]], dim=0)
         else:
             backward_features = None
         
