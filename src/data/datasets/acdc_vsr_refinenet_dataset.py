@@ -65,7 +65,7 @@ class AcdcVSRRefineNetDataset(BaseDataset):
             all_imgs = self.augments(*all_imgs)
         all_imgs = self.transforms(*all_imgs)
         all_imgs = [img.permute(2, 0, 1).contiguous() for img in all_imgs]
-        lr_imgs, hr_imgs = all_imgs[:len(all_imgs) // 2], all_imgs[len(all_imgs) // 2:]
+        lr_imgs, hr_imgs = all_imgs[:len(all_imgs) // 2], all_imgs[len(all_imgs) // 2:]    
         all_imgs = all_imgs[:len(all_imgs) // 2]
         start, num_all_frames = 0, len(all_imgs)
         
@@ -78,6 +78,9 @@ class AcdcVSRRefineNetDataset(BaseDataset):
         pos_code = self.transforms(pos_code, normalize_tags=[False])
         
         if self.type == 'train':
+            if self.num_frames > len(lr_imgs):
+                lr_imgs, hr_imgs = lr_imgs+lr_imgs, hr_imgs+hr_imgs
+            
             # Compute the start and the end index of the sequence according to the temporal order.
             n = self.num_frames
             T = len(lr_imgs)
@@ -96,9 +99,12 @@ class AcdcVSRRefineNetDataset(BaseDataset):
             else:
                 lr_imgs = lr_imgs[start:end]
                 hr_imgs = hr_imgs[start:end]
+        else:
+            start = (-6) % len(lr_imgs)
+            lr_imgs = lr_imgs[-6:] + lr_imgs + lr_imgs[:6]
+            hr_imgs = hr_imgs[-6:] + hr_imgs + hr_imgs[:6]
         
         all_imgs = all_imgs + [all_imgs[-1]] * (35-num_all_frames)
         pos_code = pos_code.repeat(35 // num_all_frames + 2)[:35].unsqueeze(1)
-        
         return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'all_imgs': all_imgs, 'index': index, \
                 'frame_start': start, 'num_all_frames': num_all_frames, 'pos_code': pos_code}

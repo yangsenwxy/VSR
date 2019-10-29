@@ -36,26 +36,24 @@ class AcdcVSRRefineNetTrainer(BaseTrainer):
         for batch in trange:
             batch = self._allocate_data(batch)
             inputs, targets, all_imgs, fs, num_all_frames, pos_codes = self._get_inputs_targets(batch)
+            targets = targets[6:-6]
             T = len(inputs)
             if mode == 'training':
                 outputs = self.net(inputs, all_imgs, fs, num_all_frames, pos_codes)
-                outputs1, outputs2, outputs3, outputs4, outputs5, outputs6 = outputs
+                outputs1, outputs2, outputs3 = outputs
                 losses = self._compute_losses(outputs1, targets) + \
                          self._compute_losses(outputs2, targets) + \
-                         self._compute_losses(outputs3, targets) + \
-                         self._compute_losses(outputs4, targets) + \
-                         self._compute_losses(outputs5, targets) + \
-                         self._compute_losses(outputs6, targets)
+                         self._compute_losses(outputs3, targets)
                 loss = (torch.stack(losses) * self.loss_weights).sum()
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
             else:
                 with torch.no_grad():
-                    outputs1, outputs2, outputs3, outputs4, outputs5, outputs6 = self.net(inputs, all_imgs, fs, num_all_frames, pos_codes)
-                    losses = self._compute_losses(outputs6, targets)
+                    outputs1, outputs2, outputs3 = self.net(inputs, all_imgs, fs, num_all_frames, pos_codes)
+                    losses = self._compute_losses(outputs3, targets)
                     loss = (torch.stack(losses) * self.loss_weights).sum()
-            metrics =  self._compute_metrics(outputs6, targets)
+            metrics =  self._compute_metrics(outputs3, targets)
 
             batch_size = self.train_dataloader.batch_size if mode == 'training' else self.valid_dataloader.batch_size
             self._update_log(log, batch_size, T, loss, losses, metrics)
@@ -64,7 +62,7 @@ class AcdcVSRRefineNetTrainer(BaseTrainer):
 
         for key in log:
             log[key] /= count
-        return log, batch, outputs6
+        return log, batch, outputs3
 
     def _get_inputs_targets(self, batch):
         """Specify the data inputs and targets.
