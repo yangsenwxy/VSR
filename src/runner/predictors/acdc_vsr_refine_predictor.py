@@ -47,7 +47,7 @@ class AcdcVSRRefinePredictor(AcdcVSRPredictor):
             inputs, targets, forward_inputs, backward_inputs, pos_code, index = self._get_inputs_targets(batch)
             T = len(inputs)
             with torch.no_grad():
-                outputs = self.net(inputs, forward_inputs, backward_inputs, pos_code)
+                outputs, _, _ = self.net(inputs, forward_inputs, backward_inputs, pos_code)
                 losses = self._compute_losses(outputs, targets)
                 loss = (losses.mean(dim=0) * self.loss_weights).sum()
                 metrics = self._compute_metrics(outputs, targets)

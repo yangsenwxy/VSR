@@ -42,47 +42,44 @@ class ConvLSTMNet(BaseNet):
         self.positional_encoding = _PositionalEncoding() if positional_encoding else None
 
     def forward(self, inputs, forward_inputs, backward_inputs, pos_code):
-        if self.updated_memory:
-            with torch.no_grad():
-                forward_features = torch.stack([self.in_block(forward_input)
-                                                for forward_input in forward_inputs], dim=0)
-                if self.bidirectional:
-                    backward_features = torch.stack([self.in_block(backward_input)
-                                                     for backward_input in backward_inputs], dim=0)
-                else:
-                    backward_features = None
-                states = self.convlstm_block.update_memory(forward_features, backward_features)
-        else:
-            states = None
-
         outputs, forward_outputs, backward_outputs = [], [], []
         in_features = torch.stack([self.in_block(input) for input in inputs], dim=0)
+        
         for i in range(self.num_stages):
+            if self.updated_memory:
+                with torch.no_grad():
+                    forward_features = torch.stack([self.in_block(forward_input)
+                                                    for forward_input in forward_inputs], dim=0)
+                    if self.bidirectional:
+                        backward_features = torch.stack([self.in_block(backward_input)
+                                                         for backward_input in backward_inputs], dim=0)
+                    else:
+                        backward_features = None
+                    states = self.convlstm_block.update_memory(forward_features, backward_features)
+            else:
+                states = None
+            
             if self.positional_encoding is not None:
                 convlstm_features, forward_features, backward_features = self.convlstm_block(in_features, states, pos_code)
                 features = [in_feature + forward_feature
                         for in_feature, forward_feature in zip(in_features, forward_features)]
-                forward_outputs.append([self.out_block(feature) for feature in features])
+                outputs.extend([[self.out_block(feature) for feature in features]])
                 features = [in_feature + backward_feature
                         for in_feature, backward_feature in zip(in_features, backward_features)]
-                backward_outputs.append([self.out_block(feature) for feature in features])
+                outputs.extend([[self.out_block(feature) for feature in features]])
             else:
                 convlstm_features = self.convlstm_block(in_features, states)
+                
             if self.bidirectional:
-                features = [[in_feature + feature
-                             for in_feature, feature in zip(in_features, features)]
-                            for features in convlstm_features]
-                outputs.extend([[self.out_block(feature) for feature in _features] for _features in features])
-                features = features[-1]
+                features = [in_feature + feature for in_feature, feature in zip(in_features, convlstm_features)]
+                outputs.extend([[self.out_block(feature) for feature in features]])
             else:
                 features = [in_feature + convlstm_feature
                             for in_feature, convlstm_feature in zip(in_features, convlstm_features)]
                 outputs.append([self.out_block(feature) for feature in features])
             in_features = torch.stack(features, dim=0)
-        if self.bidirectional:
-            return outputs, forward_outputs, backward_outputs
-        else:
-            return outputs
+
+        return outputs
 
 
 class _InBlock(nn.Sequential):
