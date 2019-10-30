@@ -17,24 +17,19 @@ class AcdcVSRRefineNetDataset(BaseDataset):
         transforms (list of Box): The preprocessing techniques applied to the data.
         augments (list of Box): The augmentation techniques applied to the training data (default: None).
         num_frames (int): The number of the frames of a sequence (default: 5).
-        temporal_order (str): The order to form the sequence (default: 'last').
-            'last': The sequence would be {t-n+1, ..., t-1, t}.
-            'middle': The sequence would be {t-(n-1)//2, ..., t-1, t, t+1, ..., t+[(n-1)-(n-1)//2]}.
+        num_updated_frames (int): The number of the frames of a sequence used for updating convlstm memory (default: 0).
     """
-    def __init__(self, downscale_factor, transforms, pos_code_path, augments=None, num_frames=5, temporal_order='last', **kwargs):
+    def __init__(self, downscale_factor, transforms, pos_code_path, augments=None, num_frames=5, num_updated_frames=0, **kwargs):
         super().__init__(**kwargs)
         if downscale_factor not in [2, 3, 4]:
             raise ValueError(f'The downscale factor should be 2, 3, 4. Got {downscale_factor}.')
         self.downscale_factor = downscale_factor
 
         self.transforms = compose(transforms)
-        self.augments = compose(augments)        
+        self.augments = compose(augments)
         self.num_frames = num_frames
-        self.pos_code_path = pos_code_path
-        
-        if temporal_order not in ['last', 'middle']:
-            raise ValueError(f"The temporal order should be 'last' or 'middle'. Got {temporal_order}.")
-        self.temporal_order = temporal_order        
+        self.num_updated_frames = num_updated_frames
+        self.pos_code_path = pos_code_path     
 
         # Save the data paths and the target frame index for training; only need to save the data paths
         # for validation to process dynamic length of the sequences.
@@ -65,9 +60,7 @@ class AcdcVSRRefineNetDataset(BaseDataset):
             all_imgs = self.augments(*all_imgs)
         all_imgs = self.transforms(*all_imgs)
         all_imgs = [img.permute(2, 0, 1).contiguous() for img in all_imgs]
-        lr_imgs, hr_imgs = all_imgs[:len(all_imgs) // 2], all_imgs[len(all_imgs) // 2:]    
-        all_imgs = all_imgs[:len(all_imgs) // 2]
-        start, num_all_frames = 0, len(all_imgs)
+        lr_imgs, hr_imgs = all_imgs[:len(all_imgs) // 2], all_imgs[len(all_imgs) // 2:]
         
         # Position encoding
         with open(self.pos_code_path, 'rb') as f:
@@ -77,34 +70,20 @@ class AcdcVSRRefineNetDataset(BaseDataset):
         pos_code = pos_codes[patient]
         pos_code = self.transforms(pos_code, normalize_tags=[False])
         
-        if self.type == 'train':
-            if self.num_frames > len(lr_imgs):
-                lr_imgs, hr_imgs = lr_imgs+lr_imgs, hr_imgs+hr_imgs
-            
-            # Compute the start and the end index of the sequence according to the temporal order.
-            n = self.num_frames
-            T = len(lr_imgs)
-            if self.temporal_order == 'last':
-                start, end = t - n + 1, t + 1
-            elif self.temporal_order == 'middle':
-                start, end = t - (n - 1) // 2, t + ((n - 1) - (n - 1) // 2) + 1
-            if start < 0:
-                start %= T
-                lr_imgs = lr_imgs[start:] + lr_imgs[:end]
-                hr_imgs = hr_imgs[start:] + hr_imgs[:end]
-            elif end > T:
-                end %= T
-                lr_imgs = lr_imgs[start:] + lr_imgs[:end]
-                hr_imgs = hr_imgs[start:] + hr_imgs[:end]
-            else:
-                lr_imgs = lr_imgs[start:end]
-                hr_imgs = hr_imgs[start:end]
-        else:
-            start = (-6) % len(lr_imgs)
-            lr_imgs = lr_imgs[-6:] + lr_imgs + lr_imgs[:6]
-            hr_imgs = hr_imgs[-6:] + hr_imgs + hr_imgs[:6]
+        # Pad for the following process
+        lr_imgs, hr_imgs = lr_imgs+lr_imgs+lr_imgs, hr_imgs+hr_imgs+hr_imgs
+        pos_code = pos_code.repeat(3).unsqueeze(1)
+        T = len(lr_imgs) // 3
         
-        all_imgs = all_imgs + [all_imgs[-1]] * (35-num_all_frames)
-        pos_code = pos_code.repeat(35 // num_all_frames + 2)[:35].unsqueeze(1)
-        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'all_imgs': all_imgs, 'index': index, \
-                'frame_start': start, 'num_all_frames': num_all_frames, 'pos_code': pos_code}
+        if self.type == 'train':
+            # Compute the start and the end index of the sequence according to the temporal order.
+            t = t + T
+            start, end = t - self.num_frames + 1, t + 1
+            lr_imgs, hr_imgs = lr_imgs[start-self.num_updated_frames:end+self.num_updated_frames], hr_imgs[start:end]
+            pos_code = pos_code[start-self.num_updated_frames:end+self.num_updated_frames]
+        else:
+            lr_imgs = lr_imgs[T-self.num_updated_frames:2*T+self.num_updated_frames]
+            hr_imgs = hr_imgs[:T]
+            pos_code = pos_code[T-self.num_updated_frames:2*T+self.num_updated_frames]
+            
+        return {'lr_imgs': lr_imgs, 'hr_imgs': hr_imgs, 'pos_code': pos_code, 'index': index}

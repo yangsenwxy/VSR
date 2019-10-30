@@ -15,17 +15,23 @@ class RefineNet(BaseNet):
         num_features (list of int): The number of the internel feature maps.
         upscale_factor (int): The upscale factor (2, 3, 4 or 8).
     """
-    def __init__(self, in_channels, out_channels, num_features, refine_window_size, upscale_factor, update_memory=False, memory=True):
+    def __init__(self, in_channels, out_channels, num_features, num_stages=1, refine_window_size=5, upscale_factor=4, 
+                 update_memory=False, num_updated_frames=0, memory=True):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_features = num_features
+        self.num_stages = num_stages
         self.refine_window_size = refine_window_size
         self.upscale_factor = upscale_factor
         self.update_memory = update_memory
+        self.num_updated_frames = num_updated_frames
         
         if upscale_factor not in [2, 3, 4, 8]:
             raise ValueError(f'The upscale factor should be 2, 3, 4 or 8. Got {upscale_factor}.')
+        
+        if update_memory == False and num_updated_frames != 0:
+            raise ValueError('The \"update_memory\" is not activated!')
         
         num_feature = num_features[0]
         self.in_block = _InBlock(in_channels, num_feature) # The input block.
@@ -41,211 +47,114 @@ class RefineNet(BaseNet):
                                              num_layers=len(num_features),
                                              bias=True,
                                              memory=memory)
-        self.refine_block = _RefineBlock(refine_window_size * num_features[-1] * 2,
+        self.refine_block = _RefineBlock(refine_window_size * (num_features[-1] * 2 + 1),
                                          num_features[-1],
                                          refine_window_size)
         self.out_block = _OutBlock(num_feature, out_channels, upscale_factor)
         
-    def forward(self, inputs, all_imgs, start, num_all_frames, pos_codes):
-        in_features, all_in_features, refined_features, forward_features, backward_features = [], [], [], [], []
+    def forward(self, inputs, pos_codes):
+        in_features, forward_update_features, backward_update_features = [], [], []
         outputs = []
-        num_frames = len(inputs)
+        num_frames = len(inputs) - 2 * self.num_updated_frames
         
-        #####################################################################################################
-        # Get all frames feature maps of bidirectional convlstm
-        #####################################################################################################
+        for input in inputs[self.num_updated_frames:-self.num_updated_frames]:
+            in_features.append(self.in_block(input))
         
-        with torch.no_grad():
-            in_feature = self.in_block(all_imgs[0])
-            self.forward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
-            self.backward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
-            if self.update_memory:
-                for img in (all_imgs[-6:]):
-                    in_feature = self.in_block(img)
-                    forward_feature = self.forward_lstm_block(in_feature)
-                for img in reversed(all_imgs[:6]):
-                    in_feature = self.in_block(img)
-                    backward_feature = self.backward_lstm_block(in_feature)
-            for img in (all_imgs):
-                in_feature = self.in_block(img)
-                all_in_features.append(in_feature)
-                forward_feature = self.forward_lstm_block(in_feature)
-                forward_features.append(forward_feature)
-            for in_feature in reversed(all_in_features):
-                backward_feature = self.backward_lstm_block(in_feature)
-                backward_features.insert(0, backward_feature)
-        
-        #######################################################################################################
-        # Start of first forward
-        #######################################################################################################
-        
-        self.forward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
-        self.backward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
-        
-        # Forward
-        _outputs = []
-        if self.update_memory:
-            with torch.no_grad():
-                for input in inputs[:6]:
-                    in_feature = self.in_block(input)
-                    in_features.append(in_feature)
-                    feature = self.forward_lstm_block(in_feature)
-        for input in inputs[6:-6]:
-            in_feature = self.in_block(input)
-            in_features.append(in_feature)
-            feature = self.forward_lstm_block(in_feature)
-            output = self.out_block(feature+in_feature)
-            _outputs.append(output)
-        outputs.append(_outputs)
-        if self.update_memory:
-            with torch.no_grad():
-                for input in inputs[-6:]:
-                    in_feature = self.in_block(input)
-                    in_features.append(in_feature)
-        
-        # Backward
-        _outputs = []
-        if self.update_memory:
-            with torch.no_grad():
-                for in_feature in reversed(in_features[-6:]):
-                    feature = self.backward_lstm_block(in_feature)
-        for in_feature in reversed(in_features[6:-6]):
-            feature = self.backward_lstm_block(in_feature)
-            output = self.out_block(feature+in_feature)
-            _outputs.insert(0, output)
-        outputs.append(_outputs)
-        
-        #  Fused
-        _outputs = []
-        for i in range(num_frames):
-            in_feature = in_features[i]
-            refine_map = self.refine_block(forward_features, backward_features, pos_codes, \
-                                           (start+i) % num_all_frames, num_all_frames)
-            output = self.out_block(refine_map+in_feature)
-            refined_features.append(refine_map+in_feature)
-            _outputs.append(output)
-        outputs.append(_outputs[6:-6])
-        
-        ########################################################################################################
-        # End of first forward
-        ########################################################################################################
-        
-        return tuple(outputs)
-        
-        ########################################################################################################
-        # Get all frames "refined" feature maps of bidirectional convlstm
-        ########################################################################################################
-        
-        refined_forward_features, refined_backward_features, refine_maps = [], [], []
-        with torch.no_grad():
-            in_feature = self.in_block(all_imgs[0])
-            self.forward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
-            self.backward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
-            for i in range(len(all_in_features)):
-                refine_maps.append(self.refine_block(forward_features, backward_features, pos_codes, 
-                                                     (torch.zeros_like(num_all_frames)+i) % num_all_frames, num_all_frames))
-            for i, in_feature in enumerate(all_in_features):
-                forward_feature = self.forward_lstm_block(in_feature+refine_maps[i])
-                refined_forward_features.append(forward_feature)
-            for i, in_feature in enumerate(reversed(all_in_features)):
-                backward_feature = self.backward_lstm_block(in_feature+refine_maps[len(all_in_features)-i-1])
-                refined_backward_features.insert(0, backward_feature)
+        for _ in range(self.num_stages):
+            forward_h_t, backward_h_t = [], []
+            self.forward_lstm_block._init_hidden(in_features[0].size(0), in_features[0].size(2), in_features[0].size(3))
+            self.backward_lstm_block._init_hidden(in_features[0].size(0), in_features[0].size(2), in_features[0].size(3))
             
-        ########################################################################################################
-        # Start of second forward (refinement)
-        ########################################################################################################
-        
-        self.forward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
-        self.backward_lstm_block._init_hidden(in_feature.size(0), in_feature.size(2), in_feature.size(3))
-        
-        # Forward
-        _outputs = []
-        if self.update_memory:
             with torch.no_grad():
-                for in_feature in refined_features[:6]:
-                    feature = self.forward_lstm_block(in_feature)
-        for in_feature in refined_features[6:-6]:
-            feature = self.forward_lstm_block(in_feature)
-            output = self.out_block(feature+in_feature)
-            _outputs.append(output)
-        outputs.append(_outputs)
-        
-        # Backward
-        _outputs = []
-        if self.update_memory:
-            with torch.no_grad():
-                for in_feature in reversed(refined_features[-6:]):
-                    feature = self.backward_lstm_block(in_feature)
-        for in_feature in reversed(refined_features[6:-6]):
-            feature = self.backward_lstm_block(in_feature)
-            output = self.out_block(feature+in_feature)
-            _outputs.insert(0, output)
-        outputs.append(_outputs)
-        
-        # with fused
-        _outputs = []
-        for i in range(num_frames):
-            in_feature = refined_features[i]
-            refine_map = self.refine_block(refined_forward_features, refined_backward_features, pos_codes, 
-                                           (start+i) % num_all_frames, num_all_frames)
-            output = self.out_block(refine_map+in_feature)
-            _outputs.append(output)
-        outputs.append(_outputs[6:-6])
-        
-        ########################################################################################################
-        # End of second forward (refinement)
-        ########################################################################################################
-        
+                if len(forward_update_features) == 0:
+                    for input in inputs[:self.num_updated_frames]:
+                        forward_update_features.append(self.in_block(input))
+                    for input in inputs[-self.num_updated_frames:]:
+                        backward_update_features.append(self.in_block(input))
+                    
+            _features = forward_update_features + in_features + backward_update_features
+            for feature in _features:
+                forward_h_t.append(self.forward_lstm_block(feature))
+            for feature in reversed(_features):
+                backward_h_t.insert(0, self.backward_lstm_block(feature))    
+            refine_maps = self.refine_block(forward_h_t, backward_h_t, pos_codes)
+            
+            #######################################################################################################
+            # Model Output
+            #######################################################################################################
+            # Forward
+            _outputs = []
+            for i in range(num_frames):
+                _outputs.append(self.out_block(in_features[i] + forward_h_t[i+self.num_updated_frames]))
+            outputs.append(_outputs)
+            # Backward
+            _outputs = []
+            for i in range(num_frames):
+                _outputs.append(self.out_block(in_features[i] + backward_h_t[i+self.num_updated_frames]))
+            outputs.append(_outputs)
+            # Fused
+            _outputs = []
+            for i in range(num_frames):
+                _outputs.append(self.out_block(in_features[i] + refine_maps[i+self.num_updated_frames-self.refine_window_size//2]))
+            outputs.append(_outputs)
+            
+            ########################################################################################################
+            # Update the features after refined
+            ########################################################################################################
+            if self.num_stages > 1:
+                # Forward
+                for i in range(len(forward_update_features)):
+                    if i < self.refine_window_size // 2:
+                        forward_update_features[i] += forward_h_t[i]
+                    else:
+                        forward_update_features[i] += refine_maps[i-self.refine_window_size//2]
+                # Backward
+                for i in range(len(backward_update_features)):
+                    if i < self.refine_window_size // 2:
+                        backward_update_features[-i-1] += backward_h_t[-i-1]
+                    else:
+                        backward_update_features[-i-1] += refine_maps[-i+self.refine_window_size//2-1]
+                # Center (Main)
+                for i in range(len(in_features)):
+                    in_features[i] += refine_maps[i+self.num_updated_frames-self.refine_window_size//2]
+            
         return tuple(outputs)
     
     
 class _RefineBlock(nn.Module):
-    def __init__(self, in_channels, num_feature, num_frames):
+    def __init__(self, in_channels, num_features, num_frames):
         super().__init__()
         self.in_channels = in_channels
-        self.num_feature = num_feature
+        self.num_features = num_features
         self.num_frames = num_frames
         
         self.body = nn.Sequential()
-        self.body.add_module('conv1', nn.Conv2d(in_channels, num_feature, kernel_size=3, padding=1))
-        self.body.add_module('prelu1', nn.ReLU(True))
-        self.body.add_module('conv2', nn.Conv2d(num_feature, num_feature, kernel_size=3, padding=1))
-        self.body.add_module('prelu2', nn.ReLU(True))
+        self.body.add_module('conv1', nn.Conv2d(in_channels, in_channels // num_frames, kernel_size=3, padding=1))
+        self.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
+        self.body.add_module('conv2', nn.Conv2d(in_channels // num_frames, num_features, kernel_size=3, padding=1))
+        self.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
         
-        
-    def forward(self, forward_features, backward_features, pos_codes, t, num_all_frames):
+    def forward(self, forward_features, backward_features, pos_codes):
         """
         Args:
-            forward_features (list of FloatTensor): the forward hidden features of all frames
-            backward_features (list of FloatTensor): the backward hidden features of all frames
-            t (int): current frame index
-            num_all_frames (int): total number of frames
+            forward_features (list of FloatTensor): The forward hidden features.
+            backward_features (list of FloatTensor): The backward hidden features.
+            pos_codes (FloatTensor): The positional encoding.
         """
-        n, c, h, w = forward_features[0].shape
-        start, end = t - self.num_frames // 2, t + self.num_frames // 2 + 1
-        inputs = torch.zeros((n, self.in_channels, h, w), device=forward_features[0].device)
-
-        for b in range(n):
-            if end[b] > num_all_frames[b]:
-                end[b] %= num_all_frames[b]
-                forward_feature = forward_features[start[b]:num_all_frames[b]] + forward_features[:end[b]]
-                backward_feature = backward_features[start[b]:num_all_frames[b]] + backward_features[:end[b]]
-                pos_code = torch.cat((pos_codes[b, start[b]:num_all_frames[b]], pos_codes[b, :end[b]]), dim=0)
-            elif start[b] < 0:
-                forward_feature = forward_features[start[b]:] + forward_features[:end[b]]
-                backward_feature = backward_features[start[b]:] + backward_features[:end[b]]
-                pos_code = torch.cat((pos_codes[b, start[b]:], pos_codes[b, :end[b]]), dim=0)
-            else:
-                forward_feature = forward_features[start[b]:end[b]]
-                backward_feature = backward_features[start[b]:end[b]]
-                pos_code = pos_codes[b, start[b]:end[b]]
-            
-            pos_code = torch.repeat_interleave(pos_code, (h*w), dim=1).view(self.num_frames, 1, h, w)
-            forward_feature = torch.stack([feature[b] for feature in forward_feature], dim=0) + pos_code
-            backward_feature = torch.stack([feature[b] for feature in backward_feature], dim=0) + pos_code
-            inputs[b] = torch.cat((forward_feature, backward_feature), dim=1).view(-1, h, w).contiguous()
+        N, C, H, W = forward_features[0].shape
+        half_window_size = self.num_frames//2
+        forward_features = torch.stack(forward_features, dim=1)
+        backward_features = torch.stack(backward_features, dim=1)
+        pos_codes = pos_codes.repeat(H, W, 1, 1, 1).permute(2, 3, 4, 0, 1).contiguous()
+        features = torch.cat((forward_features, backward_features, pos_codes), dim=2)
         
-        return self.body(inputs)
+        refine_maps = []
+        for i in range(half_window_size, features.shape[1] - half_window_size):
+            feature = features[:, i-half_window_size:i+half_window_size+1]
+            feature = torch.cat([feature[:, j] for j in range(feature.shape[1])], dim=1)
+            refine_maps.append(self.body(feature))
+            
+        return refine_maps
         
 
 class _InBlock(nn.Sequential):
