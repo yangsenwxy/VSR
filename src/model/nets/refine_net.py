@@ -16,7 +16,7 @@ class RefineNet(BaseNet):
         upscale_factor (int): The upscale factor (2, 3, 4 or 8).
     """
     def __init__(self, in_channels, out_channels, num_features, num_stages=1, refine_window_size=5, upscale_factor=4, 
-                 update_memory=False, num_updated_frames=0, memory=True):
+                 update_memory=False, num_updated_frames=0, memory=True, positional_encoding=False):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -47,9 +47,11 @@ class RefineNet(BaseNet):
                                              num_layers=len(num_features),
                                              bias=True,
                                              memory=memory)
-        self.refine_block = _RefineBlock(refine_window_size * (num_features[-1] * 2 + 1),
-                                         num_features[-1],
-                                         refine_window_size)
+        if positional_encoding:
+            refine_in_features = refine_window_size * (num_features[-1] * 2 + 1)
+        else:
+            refine_in_features = refine_window_size * (num_features[-1] * 2)
+        self.refine_block = _RefineBlock(refine_in_features, num_features[-1], refine_window_size, positional_encoding)
         self.out_block = _OutBlock(num_feature, out_channels, upscale_factor)
         
     def forward(self, inputs, pos_codes):
@@ -122,17 +124,22 @@ class RefineNet(BaseNet):
     
     
 class _RefineBlock(nn.Module):
-    def __init__(self, in_channels, num_features, num_frames):
+    def __init__(self, in_channels, num_features, num_frames, positional_encoding=False):
         super().__init__()
         self.in_channels = in_channels
         self.num_features = num_features
         self.num_frames = num_frames
+        self.positional_encoding = positional_encoding
         
         self.body = nn.Sequential()
-        self.body.add_module('conv1', nn.Conv2d(in_channels, in_channels // num_frames, kernel_size=3, padding=1))
-        self.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
-        self.body.add_module('conv2', nn.Conv2d(in_channels // num_frames, num_features, kernel_size=3, padding=1))
-        self.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
+        if self.positional_encoding:
+            self.body.add_module('conv1', nn.Conv2d(in_channels, in_channels // num_frames, kernel_size=3, padding=1))
+            self.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
+            self.body.add_module('conv2', nn.Conv2d(in_channels // num_frames, num_features, kernel_size=3, padding=1))
+            self.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
+        else:
+            self.body.add_module('conv1', nn.Conv2d(in_channels, num_features, kernel_size=1))
+            self.add_module('prelu', nn.PReLU(num_parameters=1, init=0.2))
         
     def forward(self, forward_features, backward_features, pos_codes):
         """
@@ -146,7 +153,10 @@ class _RefineBlock(nn.Module):
         forward_features = torch.stack(forward_features, dim=1)
         backward_features = torch.stack(backward_features, dim=1)
         pos_codes = pos_codes.repeat(H, W, 1, 1, 1).permute(2, 3, 4, 0, 1).contiguous()
-        features = torch.cat((forward_features, backward_features, pos_codes), dim=2)
+        if self.positional_encoding:
+            features = torch.cat((forward_features, backward_features, pos_codes), dim=2)
+        else:
+            features = torch.cat((forward_features, backward_features), dim=2)
         
         refine_maps = []
         for i in range(half_window_size, features.shape[1] - half_window_size):
