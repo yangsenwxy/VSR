@@ -51,7 +51,11 @@ class RefineNet(BaseNet):
             refine_in_features = refine_window_size * (num_features[-1] * 2 + 1)
         else:
             refine_in_features = refine_window_size * (num_features[-1] * 2)
-        self.refine_block = _RefineBlock(refine_in_features, num_features[-1], refine_window_size, positional_encoding)
+        self.refine_block = _RefineBlock(refine_in_features, 
+                                         num_features[-1], 
+                                         refine_window_size, 
+                                         num_updated_frames, 
+                                         positional_encoding)
         self.out_block = _OutBlock(num_feature, out_channels, upscale_factor)
         
     def forward(self, inputs, pos_codes):
@@ -75,10 +79,18 @@ class RefineNet(BaseNet):
                         backward_update_features.append(self.in_block(input))
                     
             _features = forward_update_features + in_features + backward_update_features
-            for feature in _features:
-                forward_h_t.append(self.forward_lstm_block(feature))
-            for feature in reversed(_features):
-                backward_h_t.insert(0, self.backward_lstm_block(feature))    
+            for i, feature in enumerate(_features):
+                if (i >= self.num_updated_frames) and (i < (len(_features) - self.num_updated_frames)):
+                    forward_h_t.append(self.forward_lstm_block(feature))
+                else:
+                    with torch.no_grad():
+                        forward_h_t.append(self.forward_lstm_block(feature))
+            for i, feature in enumerate(reversed(_features)):
+                if (i >= self.num_updated_frames) and (i < (len(_features) - self.num_updated_frames)):
+                    backward_h_t.insert(0, self.backward_lstm_block(feature))
+                else:
+                    with torch.no_grad():
+                        backward_h_t.insert(0, self.backward_lstm_block(feature))
             refine_maps = self.refine_block(forward_h_t, backward_h_t, pos_codes)
             
             #######################################################################################################
@@ -124,11 +136,12 @@ class RefineNet(BaseNet):
     
     
 class _RefineBlock(nn.Module):
-    def __init__(self, in_channels, num_features, num_frames, positional_encoding=False):
+    def __init__(self, in_channels, num_features, num_frames, num_updated_frames, positional_encoding=False):
         super().__init__()
         self.in_channels = in_channels
         self.num_features = num_features
         self.num_frames = num_frames
+        self.num_updated_frames = num_updated_frames
         self.positional_encoding = positional_encoding
         
         self.body = nn.Sequential()
@@ -162,7 +175,12 @@ class _RefineBlock(nn.Module):
         for i in range(half_window_size, features.shape[1] - half_window_size):
             feature = features[:, i-half_window_size:i+half_window_size+1]
             feature = torch.cat([feature[:, j] for j in range(feature.shape[1])], dim=1)
-            refine_maps.append(self.body(feature))
+            
+            if i >= self.num_updated_frames and i < (forward_features.shape[1] - self.num_updated_frames):
+                refine_maps.append(self.body(feature))
+            else:
+                with torch.no_grad():
+                    refine_maps.append(self.body(feature))
             
         return refine_maps
         
