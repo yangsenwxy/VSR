@@ -10,7 +10,7 @@ from pathlib import Path
 
 def main(args):
     coordinates = {}
-    patient_dirs = sorted([dir_ for dir_ in args.data_dir.iterdir() if dir_.is_dir()])
+    patient_dirs = sorted(list(args.data_dir.glob('**/HR/*')))
     for patient_dir in patient_dirs:
         # Create the output directories.
         patient_name = patient_dir.parts[-1]
